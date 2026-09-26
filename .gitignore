@@ -1,0 +1,16 @@
+# Build artifacts
+/trail
+/trail.exe
+/bin/
+/dist/
+*.test
+*.out
+coverage.html
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
