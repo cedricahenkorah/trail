@@ -6,6 +6,7 @@ package cli
 import (
 	"os"
 
+	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/spf13/cobra"
 )
 
@@ -38,4 +39,7 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	//
+
+	rootCmd.AddCommand(project.NewCommand())
 }
