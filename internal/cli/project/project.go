@@ -23,5 +23,6 @@ var projectCmd = &cobra.Command{
 
 func NewCommand() *cobra.Command {
 	projectCmd.AddCommand(addCmd)
+	projectCmd.AddCommand(listCmd)
 	return projectCmd
 }
