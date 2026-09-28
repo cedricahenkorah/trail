@@ -4,12 +4,7 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-
+	"github.com/cedricahenkorah/trail/internal/cli/config"
 	"github.com/spf13/cobra"
 )
 
@@ -39,60 +34,18 @@ func init() {
 }
 
 func runStatusCmd(cmd *cobra.Command, args []string) error {
-	var cfg config
+	cfg, cfgFilePath, configLoadErr := config.Load()
 
-	configDir, configDirErr := os.UserConfigDir()
-
-	if configDirErr != nil {
-		return fmt.Errorf("find Trail config directory %w", configDirErr)
+	if configLoadErr != nil {
+		return configLoadErr
 	}
 
-	trailConfigPath := filepath.Join(configDir, "trail", "config.json")
+	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
 
-	configData, configDataErr := os.ReadFile(trailConfigPath)
-
-	if os.IsNotExist(configDataErr) {
-		return fmt.Errorf("Trail is not initialized; run trail init")
+	if dataDirErr != nil {
+		return dataDirErr
 	}
 
-	if configDataErr != nil {
-		return fmt.Errorf("read Trail config: %w", configDataErr)
-	}
-
-	if len(bytes.TrimSpace(configData)) == 0 {
-		return fmt.Errorf(
-			"Trail config is empty at %s; run trail init to repair it",
-			trailConfigPath,
-		)
-	}
-
-	indentErr := json.Unmarshal(configData, &cfg)
-
-	if indentErr != nil {
-		return fmt.Errorf("parse Trail config at %s: %w", trailConfigPath, indentErr)
-	}
-
-	if cfg.DataDirectory == "" {
-		return fmt.Errorf("config has no data directory; run trail init to repair it")
-	}
-
-	dataDirInfo, dataDirInfoErr := os.Stat(cfg.DataDirectory)
-
-	if os.IsNotExist(dataDirInfoErr) {
-		return fmt.Errorf(
-			"configured data directory was not found: %s; check whether it was moved or deleted",
-			cfg.DataDirectory,
-		)
-	}
-
-	if dataDirInfoErr != nil {
-		return fmt.Errorf("inspect configured data directory: %w", dataDirInfoErr)
-	}
-
-	if !dataDirInfo.IsDir() {
-		return fmt.Errorf("configured data directory path is not a directory: %s", cfg.DataDirectory)
-	}
-
-	cmd.Printf("Trail status\n\nData directory:   %s\nConfig file:      %s\nCurrent project:  none\n", cfg.DataDirectory, trailConfigPath)
+	cmd.Printf("Trail status\n\nData directory:   %s\nConfig file:      %s\nCurrent project:  none\n", cfg.DataDirectory, cfgFilePath)
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cedricahenkorah/trail/internal/cli/config"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +42,7 @@ func init() {
 }
 
 func runInitCmd(cmd *cobra.Command, args []string) error {
-	var cfg config
+	var cfg config.Config
 
 	configDir, configDirErr := os.UserConfigDir()
 
@@ -217,21 +218,10 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	dataDirInfo, dataDirInfoErr := os.Stat(cfg.DataDirectory)
+	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
 
-	if os.IsNotExist(dataDirInfoErr) {
-		return fmt.Errorf(
-			"configured data directory was not found: %s; check whether it was moved or deleted",
-			cfg.DataDirectory,
-		)
-	}
-
-	if dataDirInfoErr != nil {
-		return fmt.Errorf("inspect configured data directory: %w", dataDirInfoErr)
-	}
-
-	if !dataDirInfo.IsDir() {
-		return fmt.Errorf("configured data directory path is not a directory: %s", cfg.DataDirectory)
+	if dataDirErr != nil {
+		return dataDirErr
 	}
 
 	cmd.Printf("Trail is already initialized. Data directory: %s\nConfig file:     %s\n\nNext: run trail --help to see available commands.\n", cfg.DataDirectory, trailConfigPath)
@@ -378,7 +368,7 @@ func prepareDataDirectory(dataDir string) error {
 	return nil
 }
 
-func setAndEncodeDataDirConfig(cfg config, dataDir string) ([]byte, error) {
+func setAndEncodeDataDirConfig(cfg config.Config, dataDir string) ([]byte, error) {
 	cfg.DataDirectory = dataDir
 
 	contents, indentErr := json.MarshalIndent(cfg, "", " ")
