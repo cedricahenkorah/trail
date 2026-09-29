@@ -4,7 +4,6 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package project
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +31,6 @@ func init() {
 }
 
 func runProjectListCommand(cmd *cobra.Command, args []string) error {
-	var projectsRegistry ProjectsRegistry
 
 	cfg, _, configLoadErr := config.Load()
 
@@ -46,33 +44,10 @@ func runProjectListCommand(cmd *cobra.Command, args []string) error {
 		return dataDirErr
 	}
 
-	projectJsonPath := filepath.Join(cfg.DataDirectory, "projects.json")
+	projectRegistry, projectRegistryErr := LoadProjectRegistry(cfg.DataDirectory)
 
-	projectJsonData, projectJsonDataReadErr := os.ReadFile(projectJsonPath)
-
-	if os.IsNotExist(projectJsonDataReadErr) {
-		projectsDir := filepath.Join(cfg.DataDirectory, "projects")
-
-		projectDirEntries, projectDirEntriesErr := os.ReadDir(projectsDir)
-
-		if projectDirEntriesErr != nil && !os.IsNotExist(projectDirEntriesErr) {
-			return fmt.Errorf("read projects directory: %w", projectDirEntriesErr)
-		}
-
-		// todo: add a helpful command in the error msg so a user can repair the drift / offer to repair in this path
-		if len(projectDirEntries) > 0 {
-			return fmt.Errorf("project registry is missing but projects directory is not empty")
-		}
-
-		projectsRegistry.Projects = []ProjectRecord{}
-	} else if projectJsonDataReadErr != nil {
-		return fmt.Errorf("read project registry at %s: %w", projectJsonPath, projectJsonDataReadErr)
-	} else {
-		parseErr := json.Unmarshal(projectJsonData, &projectsRegistry)
-
-		if parseErr != nil {
-			return fmt.Errorf("parse projects json at %s: %w", projectJsonPath, parseErr)
-		}
+	if projectRegistryErr != nil {
+		return projectRegistryErr
 	}
 
 	all, allErr := cmd.Flags().GetBool("all")
@@ -97,7 +72,7 @@ func runProjectListCommand(cmd *cobra.Command, args []string) error {
 
 	var selectedProjects []ProjectRecord
 
-	for _, registeredProject := range projectsRegistry.Projects {
+	for _, registeredProject := range projectRegistry.Projects {
 		if registeredProject.Archived && !all {
 			continue
 		}
@@ -138,7 +113,7 @@ func runProjectListCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(projectsRegistry.Projects) == 0 {
+	if len(projectRegistry.Projects) == 0 {
 		cmd.Println("No projects yet. Add one with trail project add.")
 		return nil
 	}

@@ -4,7 +4,10 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package project
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -25,4 +28,38 @@ func NewCommand() *cobra.Command {
 	projectCmd.AddCommand(addCmd)
 	projectCmd.AddCommand(listCmd)
 	return projectCmd
+}
+
+func LoadProjectRegistry(dataDir string) (ProjectsRegistry, error) {
+	var projectsRegistry ProjectsRegistry
+
+	projectJsonPath := filepath.Join(dataDir, "projects.json")
+
+	projectJsonData, projectJsonDataReadErr := os.ReadFile(projectJsonPath)
+
+	if os.IsNotExist(projectJsonDataReadErr) {
+		projectsDir := filepath.Join(dataDir, "projects")
+
+		projectDirEntries, projectDirEntriesErr := os.ReadDir(projectsDir)
+
+		if projectDirEntriesErr != nil && !os.IsNotExist(projectDirEntriesErr) {
+			return ProjectsRegistry{}, fmt.Errorf("read projects directory: %w", projectDirEntriesErr)
+		}
+
+		if len(projectDirEntries) > 0 {
+			return ProjectsRegistry{}, fmt.Errorf("project registry is missing but projects directory is not empty")
+		}
+
+		projectsRegistry.Projects = []ProjectRecord{}
+	} else if projectJsonDataReadErr != nil {
+		return ProjectsRegistry{}, fmt.Errorf("read project registry at %s: %w", projectJsonPath, projectJsonDataReadErr)
+	} else {
+		parseErr := json.Unmarshal(projectJsonData, &projectsRegistry)
+
+		if parseErr != nil {
+			return ProjectsRegistry{}, fmt.Errorf("parse projects json at %s: %w", projectJsonPath, parseErr)
+		}
+	}
+
+	return projectsRegistry, nil
 }
