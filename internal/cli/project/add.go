@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/cli/config"
+	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -123,9 +124,8 @@ func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 			var linkedDir string
 			var tags []string
 
-			pickProjectNameErr := huh.NewInput().
+			pickProjectNameErr := prompt.Run(huh.NewInput().
 				Title("How do you want to name this project?").
-				Prompt("?").
 				Validate(func(value string) error {
 					projectNameValidationErr := validateProjectName(value)
 
@@ -139,8 +139,7 @@ func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 						&projectsRegistry,
 					)
 				}).
-				Value(&name).
-				Run()
+				Value(&name))
 
 			if pickProjectNameErr != nil {
 				return fmt.Errorf("read project name: %w", pickProjectNameErr)
@@ -154,15 +153,14 @@ func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 
 			var directoryPathLinkChoice string
 
-			linkDirectoryErr := huh.NewSelect[string]().
+			linkDirectoryErr := prompt.Run(huh.NewSelect[string]().
 				Title("Link a working directory?").
 				Options(
 					huh.NewOption(fmt.Sprintf("In this current directory (%s)", cwd), "current"),
 					huh.NewOption("At another directory path", "custom"),
 					huh.NewOption("Skip", "skip"),
 				).
-				Value(&directoryPathLinkChoice).
-				Run()
+				Value(&directoryPathLinkChoice))
 
 			if linkDirectoryErr != nil {
 				return fmt.Errorf("choose linked directory: %w", linkDirectoryErr)
@@ -172,10 +170,9 @@ func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 			case "custom":
 				var custom string
 
-				customDirPathErr := huh.NewInput().
+				customDirPathErr := prompt.Run(huh.NewInput().
 					Title("Enter the directory path").
-					Value(&custom).
-					Run()
+					Value(&custom))
 
 				if customDirPathErr != nil {
 					return fmt.Errorf("read linked directory path: %w", customDirPathErr)
@@ -199,11 +196,10 @@ func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 
 			var tagsInput string
 
-			tagsErr := huh.NewInput().
+			tagsErr := prompt.Run(huh.NewInput().
 				Title("Tags (optional, separated by commas)").
 				Placeholder("personal, work").
-				Value(&tagsInput).
-				Run()
+				Value(&tagsInput))
 
 			if tagsErr != nil {
 				return fmt.Errorf("read project tags: %w", tagsErr)
@@ -227,10 +223,9 @@ func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 
 			var anotherProject bool
 
-			confirmAddAnotherProjectErr := huh.NewConfirm().
+			confirmAddAnotherProjectErr := prompt.Run(huh.NewConfirm().
 				Title("Add another project?").
-				Value(&anotherProject).
-				Run()
+				Value(&anotherProject))
 
 			if confirmAddAnotherProjectErr != nil {
 				return fmt.Errorf("confirm add another project: %w", confirmAddAnotherProjectErr)

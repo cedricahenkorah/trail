@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/cli/config"
+	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -153,10 +154,9 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 
 		var repair bool
 
-		createTempFileErr := huh.NewConfirm().
+		createTempFileErr := prompt.Run(huh.NewConfirm().
 			Title("Set a data directory now?").
-			Value(&repair).
-			Run()
+			Value(&repair))
 
 		if createTempFileErr != nil {
 			return fmt.Errorf("confirm Trail config repair: %w", createTempFileErr)
@@ -246,14 +246,13 @@ func chooseDataDirectory(args []string) (string, error) {
 	} else {
 		var choice string
 
-		dirSelectErr := huh.NewSelect[string]().
+		dirSelectErr := prompt.Run(huh.NewSelect[string]().
 			Title("Where should Trail save its data?").
 			Options(
 				huh.NewOption(fmt.Sprintf("In this current directory (%s)", cwd), "current"),
 				huh.NewOption("At another directory path", "custom"),
 			).
-			Value(&choice).
-			Run()
+			Value(&choice))
 
 		if dirSelectErr != nil {
 			return "", fmt.Errorf("choose data directory location: %w", dirSelectErr)
@@ -262,10 +261,9 @@ func chooseDataDirectory(args []string) (string, error) {
 		if choice == "custom" {
 			var custom string
 
-			customDirPathErr := huh.NewInput().
+			customDirPathErr := prompt.Run(huh.NewInput().
 				Title("Enter the directory path").
-				Value(&custom).
-				Run()
+				Value(&custom))
 
 			if customDirPathErr != nil {
 				return "", fmt.Errorf("read data directory path: %w", customDirPathErr)
