@@ -6,6 +6,7 @@ package cli
 import (
 	"os"
 
+	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/spf13/cobra"
 )
@@ -41,5 +42,6 @@ func init() {
 	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	//
 
+	rootCmd.AddCommand(log.NewCommand())
 	rootCmd.AddCommand(project.NewCommand())
 }
