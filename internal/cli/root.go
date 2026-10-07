@@ -5,6 +5,7 @@ import (
 
 	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/project"
+	"github.com/cedricahenkorah/trail/internal/cli/task"
 	"github.com/spf13/cobra"
 )
 
@@ -41,4 +42,5 @@ func init() {
 
 	rootCmd.AddCommand(log.NewCommand())
 	rootCmd.AddCommand(project.NewCommand())
+	rootCmd.AddCommand(task.NewCommand())
 }
