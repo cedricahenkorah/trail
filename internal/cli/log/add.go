@@ -99,7 +99,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 	date := time.Now().Format("2006-01-02")
 
 	if dateFilter != "" {
-		validatedDate, validatedDateErr := validateDate(dateFilter)
+		validatedDate, validatedDateErr := ValidateDate(dateFilter)
 
 		if validatedDateErr != nil {
 			return validatedDateErr
@@ -116,7 +116,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := findProjectsLinkedToCurrentDirectory(projectRegistry)
+			matchedProjects, matchedProjectsErr := FindProjectsLinkedToCurrentDirectory(projectRegistry)
 
 			if matchedProjectsErr != nil {
 				return matchedProjectsErr
@@ -156,7 +156,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return nil
 	} else {
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := findProjectsLinkedToCurrentDirectory(projectRegistry)
+			matchedProjects, matchedProjectsErr := FindProjectsLinkedToCurrentDirectory(projectRegistry)
 
 			if matchedProjectsErr != nil {
 				return matchedProjectsErr
@@ -178,7 +178,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 
 			switch len(matchedProjects) {
 			case 0:
-				activeProject, activeProjectErr := chooseActiveProject(activeProjects)
+				activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
 
 				if activeProjectErr != nil {
 					return activeProjectErr
@@ -188,7 +188,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 
 			case 1:
 				if matchedProjects[0].Archived {
-					activeProject, activeProjectErr := chooseActiveProject(activeProjects)
+					activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
 
 					if activeProjectErr != nil {
 						return activeProjectErr
@@ -200,7 +200,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 				}
 
 			default:
-				activeProject, activeProjectErr := chooseActiveProject(activeProjects)
+				activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
 
 				if activeProjectErr != nil {
 					return activeProjectErr
@@ -242,7 +242,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 
 }
 
-func findProjectsLinkedToCurrentDirectory(
+func FindProjectsLinkedToCurrentDirectory(
 	registry project.ProjectsRegistry,
 ) ([]project.ProjectRecord, error) {
 	var matchedProjects []project.ProjectRecord
@@ -273,7 +273,7 @@ func findProjectsLinkedToCurrentDirectory(
 	return matchedProjects, nil
 }
 
-func validateDate(value string) (string, error) {
+func ValidateDate(value string) (string, error) {
 	parsedDate, parsedDateErr := time.Parse("2006-01-02", value)
 
 	if parsedDateErr != nil {
@@ -383,7 +383,7 @@ func saveLogEntry(
 	return logFilePath, nil
 }
 
-func chooseActiveProject(activeProjects []project.ProjectRecord) (project.ProjectRecord, error) {
+func ChooseActiveProject(activeProjects []project.ProjectRecord) (project.ProjectRecord, error) {
 	var chosenProjectName string
 	var options []huh.Option[string]
 
