@@ -19,5 +19,6 @@ var taskCmd = &cobra.Command{
 
 func NewCommand() *cobra.Command {
 	taskCmd.AddCommand(addCmd)
+	taskCmd.AddCommand(listCmd)
 	return taskCmd
 }
