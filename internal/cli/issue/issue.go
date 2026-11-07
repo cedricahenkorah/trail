@@ -13,5 +13,6 @@ var issueCmd = &cobra.Command{
 
 func NewCommand() *cobra.Command {
 	issueCmd.AddCommand(addCmd)
+	issueCmd.AddCommand(listCmd)
 	return issueCmd
 }
