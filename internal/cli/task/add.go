@@ -2,12 +2,10 @@ package task
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
+	"github.com/cedricahenkorah/trail/internal/cli/checklist"
 	"github.com/cedricahenkorah/trail/internal/cli/config"
 	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/project"
@@ -108,7 +106,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if cmd.Flags().Changed("file") && fileName != "" {
-		normalizedFileName, normalizedFileNameErr := normalizeTaskFilename(fileName)
+		normalizedFileName, normalizedFileNameErr := checklist.NormalizeFilename(fileName)
 
 		if normalizedFileNameErr != nil {
 			return normalizedFileNameErr
@@ -177,7 +175,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		matchedProjectDir, matchedProjectDirErr := resolveMatchedProjectDirectory(cfg.DataDirectory, matchedProject)
+		matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
 
 		if matchedProjectDirErr != nil {
 			return matchedProjectDirErr
@@ -187,7 +185,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			fileName = today + ".md"
 		}
 
-		taskFilePath, saveTaskErr := saveTaskEntry(matchedProjectDir, fileName, today, task, dueDate)
+		taskFilePath, saveTaskErr := checklist.AddItem(matchedProjectDir, checklist.Tasks, fileName, today, formatTaskItem(task, dueDate))
 
 		if saveTaskErr != nil {
 			return saveTaskErr
@@ -255,141 +253,26 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		matchedProjectDir, matchedProjectDirErr := resolveMatchedProjectDirectory(cfg.DataDirectory, matchedProject)
+		matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
 
 		if matchedProjectDirErr != nil {
 			return matchedProjectDirErr
 		}
 
-		taskDir, taskDirErr := resolveTaskDirectory(matchedProjectDir)
+		taskDir, taskDirErr := checklist.ResolveDir(matchedProjectDir, checklist.Tasks)
 
 		if taskDirErr != nil {
 			return taskDirErr
 		}
 
 		if fileName == "" {
-			entries, entriesErr := os.ReadDir(taskDir)
+			chosenFile, chooseFileErr := checklist.ChooseFile(taskDir, checklist.Tasks, today)
 
-			if entriesErr != nil && !os.IsNotExist(entriesErr) {
-				return fmt.Errorf("read task directory %s: %w", taskDir, entriesErr)
+			if chooseFileErr != nil {
+				return chooseFileErr
 			}
 
-			var taskFiles []string
-
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-
-				if !strings.HasSuffix(entry.Name(), ".md") {
-					continue
-				}
-
-				taskFiles = append(taskFiles, entry.Name())
-			}
-
-			todayFile := today + ".md"
-
-			todayExists := slices.Contains(taskFiles, todayFile)
-
-			todayLabel := todayFile + " (today; create new)"
-
-			if todayExists {
-				todayLabel = todayFile + " (today; append)"
-			}
-
-			options := []huh.Option[string]{
-				huh.NewOption(todayLabel, todayFile),
-			}
-
-			for _, taskFile := range taskFiles {
-				if taskFile == todayFile {
-					continue
-				}
-
-				options = append(options, huh.NewOption(taskFile, taskFile))
-			}
-
-			const customFileChoice = "create-custom"
-
-			options = append(options, huh.NewOption("Create a custom-named file", customFileChoice))
-
-			chosenFileOption := todayFile
-
-			selectFileErr := prompt.Run(huh.NewSelect[string]().
-				Title("Choose a file to save the task to").
-				Options(options...).
-				Value(&chosenFileOption))
-
-			if selectFileErr != nil {
-				return fmt.Errorf("choose file: %w", selectFileErr)
-			}
-
-			fileName = chosenFileOption
-
-			if chosenFileOption == customFileChoice {
-				var custom string
-
-				for {
-					customFileErr := prompt.Run(huh.NewInput().
-						Title("Enter the file name of your choice").
-						Validate(func(custom string) error {
-							custom = strings.TrimSpace(custom)
-
-							_, normalizedFileNameErr := normalizeTaskFilename(custom)
-
-							if normalizedFileNameErr != nil {
-								return normalizedFileNameErr
-							}
-
-							return nil
-						}).
-						Value(&custom))
-
-					if customFileErr != nil {
-						return fmt.Errorf("read file name: %w", customFileErr)
-					}
-
-					normalizedFileName, normalizedFileNameErr := normalizeTaskFilename(strings.TrimSpace(custom))
-
-					if normalizedFileNameErr != nil {
-						return normalizedFileNameErr
-					}
-
-					customPath := filepath.Join(taskDir, normalizedFileName)
-
-					_, checkErr := os.Lstat(customPath)
-
-					if os.IsNotExist(checkErr) {
-						fileName = normalizedFileName
-						break
-					}
-
-					if checkErr != nil {
-						return fmt.Errorf("check task file %s: %w", customPath, checkErr)
-					}
-
-					var collisionChoice string
-
-					collisionErr := prompt.Run(huh.NewSelect[string]().
-						Title(normalizedFileName+" already exists").
-						Options(
-							huh.NewOption("Append to it", "append"),
-							huh.NewOption("Choose another name", "rename"),
-						).
-						Value(&collisionChoice))
-
-					if collisionErr != nil {
-						return fmt.Errorf("choose how to handle existing file: %w", collisionErr)
-					}
-
-					if collisionChoice == "append" {
-						fileName = normalizedFileName
-						break
-					}
-				}
-
-			}
+			fileName = chosenFile
 		}
 
 		var task string
@@ -440,7 +323,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			dueDate = strings.TrimSpace(dueDate)
 		}
 
-		taskFilePath, saveTaskErr := saveTaskEntry(matchedProjectDir, fileName, today, task, dueDate)
+		taskFilePath, saveTaskErr := checklist.AddItem(matchedProjectDir, checklist.Tasks, fileName, today, formatTaskItem(task, dueDate))
 
 		if saveTaskErr != nil {
 			return saveTaskErr
@@ -455,149 +338,11 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func resolveTaskDirectory(
-	matchedProjectDir string,
-) (string, error) {
-	taskDir := filepath.Join(matchedProjectDir, "tasks")
-
-	taskDirInfo, taskDirInfoErr := os.Lstat(taskDir)
-
-	if taskDirInfoErr != nil && !os.IsNotExist(taskDirInfoErr) {
-		return "", fmt.Errorf("check task dir: %w", taskDirInfoErr)
+// formatTaskItem appends the optional due-date marker to the task text.
+func formatTaskItem(task, dueDate string) string {
+	if dueDate == "" {
+		return task
 	}
 
-	if taskDirInfoErr == nil && !taskDirInfo.IsDir() {
-		return "", fmt.Errorf("project task folder is not a directory: %s", taskDir)
-	}
-
-	return taskDir, nil
-}
-
-func resolveMatchedProjectDirectory(
-	dataDir string,
-	matchedProject project.ProjectRecord,
-) (string, error) {
-	matchedProjectDir := filepath.Join(dataDir, "projects", matchedProject.Name)
-
-	matchedProjectInfo, matchedProjectInfoErr := os.Lstat(matchedProjectDir)
-
-	if os.IsNotExist(matchedProjectInfoErr) {
-		return "", fmt.Errorf("project %q is registered but its folder is missing: %s", matchedProject.Name, matchedProjectDir)
-	}
-
-	if matchedProjectInfoErr != nil {
-		return "", fmt.Errorf("check project folder %s: %w", matchedProjectDir, matchedProjectInfoErr)
-	}
-
-	if !matchedProjectInfo.IsDir() {
-		return "", fmt.Errorf("project folder is not a directory: %s", matchedProjectDir)
-	}
-
-	return matchedProjectDir, nil
-}
-
-func normalizeTaskFilename(fileName string) (string, error) {
-	if fileName == "" {
-		return "", fmt.Errorf("filename cannot be left blank")
-	}
-
-	if strings.HasPrefix(fileName, ".") || strings.ContainsAny(fileName, `/\`) {
-		return "", fmt.Errorf("filename contains invalid characters")
-	}
-
-	fileNameExt := filepath.Ext(fileName)
-
-	if fileNameExt != "" && fileNameExt != ".md" {
-		return "", fmt.Errorf("filename must have no extension or end in .md")
-	}
-
-	if fileNameExt == "" {
-		fileName += ".md"
-	}
-
-	return fileName, nil
-}
-
-func saveTaskEntry(
-	matchedProjectDir string,
-	fileName string,
-	today string,
-	task string,
-	dueDate string,
-) (string, error) {
-	taskDir, taskDirErr := resolveTaskDirectory(matchedProjectDir)
-
-	if taskDirErr != nil {
-		return "", taskDirErr
-	}
-
-	createTaskDirErr := os.MkdirAll(taskDir, 0700)
-
-	if createTaskDirErr != nil {
-		return "", fmt.Errorf("create task dir: %w", createTaskDirErr)
-	}
-
-	taskFilePath := filepath.Join(taskDir, fileName)
-
-	taskEntry := fmt.Sprintf("- [ ] %s", task)
-
-	if dueDate != "" {
-		taskEntry += fmt.Sprintf(" @due(%s)", dueDate)
-	}
-
-	taskEntry += "\n"
-
-	openTaskFile, openTaskFileErr := os.OpenFile(taskFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-
-	if os.IsExist(openTaskFileErr) {
-		existingTaskFile, existingTaskFileErr := os.ReadFile(taskFilePath)
-
-		if existingTaskFileErr != nil {
-			return "", fmt.Errorf("read task file %s: %w", taskFilePath, existingTaskFileErr)
-		}
-
-		if len(existingTaskFile) > 0 && existingTaskFile[len(existingTaskFile)-1] != '\n' {
-			taskEntry = "\n" + taskEntry
-		}
-
-		openTaskFile, openTaskFileErr := os.OpenFile(taskFilePath, os.O_WRONLY|os.O_APPEND, 0)
-
-		if openTaskFileErr != nil {
-			return "", fmt.Errorf("open task file %s: %w", taskFilePath, openTaskFileErr)
-		}
-
-		_, writeErr := openTaskFile.Write([]byte(taskEntry))
-		closeErr := openTaskFile.Close()
-
-		if writeErr != nil {
-			return "", fmt.Errorf("append task file %s: %w", taskFilePath, writeErr)
-		}
-
-		if closeErr != nil {
-			return "", fmt.Errorf("close task file %s: %w", taskFilePath, closeErr)
-		}
-
-		return taskFilePath, nil
-	} else if openTaskFileErr != nil {
-		return "", fmt.Errorf("create task file: %w", openTaskFileErr)
-	} else {
-		// create the file
-		trimmedFileName := strings.TrimSuffix(fileName, ".md")
-
-		content := fmt.Sprintf("---\ndate: %s\n---\n\n# %s\n\n%s", today, trimmedFileName, taskEntry)
-
-		_, writeTaskErr := openTaskFile.Write([]byte(content))
-		closeTaskErr := openTaskFile.Close()
-
-		if writeTaskErr != nil {
-			return "", fmt.Errorf("write task %s: %w", taskFilePath, writeTaskErr)
-		}
-
-		if closeTaskErr != nil {
-			return "", fmt.Errorf("close task %s: %w", taskFilePath, closeTaskErr)
-		}
-
-		return taskFilePath, nil
-	}
-
+	return fmt.Sprintf("%s @due(%s)", task, dueDate)
 }

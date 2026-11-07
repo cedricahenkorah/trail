@@ -60,3 +60,23 @@ func LoadProjectRegistry(dataDir string) (ProjectsRegistry, error) {
 
 	return projectsRegistry, nil
 }
+
+func ResolveFolder(dataDir string, record ProjectRecord) (string, error) {
+	dir := filepath.Join(dataDir, "projects", record.Name)
+
+	info, err := os.Lstat(dir)
+
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("project %q is registered but its folder is missing: %s", record.Name, dir)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("check project folder %s: %w", dir, err)
+	}
+
+	if !info.IsDir() {
+		return "", fmt.Errorf("project folder is not a directory: %s", dir)
+	}
+
+	return dir, nil
+}

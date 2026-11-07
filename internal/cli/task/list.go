@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cedricahenkorah/trail/internal/cli/checklist"
 	"github.com/cedricahenkorah/trail/internal/cli/config"
 	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/project"
@@ -156,13 +157,13 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	matchedProjectDir, matchedProjectDirErr := resolveMatchedProjectDirectory(cfg.DataDirectory, matchedProject)
+	matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
 
 	if matchedProjectDirErr != nil {
 		return matchedProjectDirErr
 	}
 
-	taskDir, taskDirErr := resolveTaskDirectory(matchedProjectDir)
+	taskDir, taskDirErr := checklist.ResolveDir(matchedProjectDir, checklist.Tasks)
 
 	if taskDirErr != nil {
 		return taskDirErr
