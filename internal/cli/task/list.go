@@ -4,11 +4,9 @@ Copyright © 2026 NAME HERE <EMAIL ADDRESS>
 package task
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
@@ -19,18 +17,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
-
-type taskItem struct {
-	Text         string
-	Done         bool
-	MarkerOffset int
-}
-
-type taskFileSummary struct {
-	Name  string
-	Open  int
-	Total int
-}
 
 // listCmd represents the list command
 var listCmd = &cobra.Command{
@@ -170,67 +156,19 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	for {
-		entries, entriesErr := os.ReadDir(taskDir)
+		summaries, listErr := checklist.ListFiles(taskDir)
 
-		if entriesErr != nil && !os.IsNotExist(entriesErr) {
-			return fmt.Errorf("read task directory %s: %w", taskDir, entriesErr)
+		if listErr != nil {
+			return listErr
 		}
 
-		var taskFiles []string
-
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-
-			if strings.HasPrefix(entry.Name(), ".") {
-				continue
-			}
-
-			if !strings.HasSuffix(entry.Name(), ".md") {
-				continue
-			}
-
-			taskFiles = append(taskFiles, entry.Name())
-		}
-
-		if len(taskFiles) == 0 {
+		if len(summaries) == 0 {
 			cmd.Printf(
 				"No task files yet for %s. Add one with trail task add --project %s.\n",
 				matchedProject.Name,
 				matchedProject.Name,
 			)
 			return nil
-		}
-
-		var summaries []taskFileSummary
-
-		for _, file := range taskFiles {
-			path := filepath.Join(taskDir, file)
-
-			content, readErr := os.ReadFile(path)
-
-			if readErr != nil {
-				return fmt.Errorf("read task file %s: %w", path, readErr)
-			}
-
-			items := parseTaskItems(content)
-
-			openCount := 0
-
-			for _, item := range items {
-				if !item.Done {
-					openCount++
-				}
-			}
-
-			totalCount := len(items)
-
-			summaries = append(summaries, taskFileSummary{
-				Name:  file,
-				Open:  openCount,
-				Total: totalCount,
-			})
 		}
 
 		var options []huh.Option[string]
@@ -248,7 +186,7 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 
 		options = append(options, huh.NewOption("Done", ""))
 
-		chosenFile := taskFiles[0]
+		chosenFile := summaries[0].Name
 
 		cmd.Printf("Tasks for %s\n\n", matchedProject.Name)
 
@@ -273,7 +211,7 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("read task file: %w", chosenFileContentErr)
 		}
 
-		parsedChosenFileTaskItems := parseTaskItems(chosenFileContent)
+		parsedChosenFileTaskItems := checklist.ParseItems(chosenFileContent)
 
 		cmd.Printf("%s / %s\n\n", matchedProject.Name, chosenFile)
 
@@ -320,69 +258,16 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("select tasks: %w", toggleTasksErr)
 		}
 
-		updatedContent := bytes.Clone(chosenFileContent)
-		hasChanges := false
+		changed, saveErr := checklist.SetDone(chosenFilePath, chosenFileContent, parsedChosenFileTaskItems, completedIndexes)
 
-		for i, item := range parsedChosenFileTaskItems {
-			nowDone := slices.Contains(completedIndexes, i)
-
-			if nowDone == item.Done {
-				continue
-			}
-
-			if nowDone {
-				updatedContent[item.MarkerOffset] = 'x'
-			} else {
-				updatedContent[item.MarkerOffset] = ' '
-			}
-
-			hasChanges = true
-		}
-
-		if !hasChanges {
-			continue
-		}
-
-		saveErr := os.WriteFile(chosenFilePath, updatedContent, 0600)
 		if saveErr != nil {
-			return fmt.Errorf("save task file %s: %w", chosenFilePath, saveErr)
+			return saveErr
+		}
+
+		if !changed {
+			continue
 		}
 
 		cmd.Printf("Saved tasks in %s.\n", chosenFile)
 	}
-}
-
-func parseTaskItems(content []byte) []taskItem {
-	var items []taskItem
-	offset := 0
-
-	for _, rawLine := range bytes.SplitAfter(content, []byte("\n")) {
-		lineOffset := offset
-		offset += len(rawLine)
-
-		line := strings.TrimSuffix(string(rawLine), "\n")
-		line = strings.TrimSuffix(line, "\r")
-
-		isTask := strings.HasPrefix(line, "- [ ] ") ||
-			strings.HasPrefix(line, "- [x] ") ||
-			strings.HasPrefix(line, "- [X] ")
-
-		if !isTask {
-			continue
-		}
-
-		text := line[6:]
-
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-
-		items = append(items, taskItem{
-			Text:         text,
-			Done:         line[3] != ' ',
-			MarkerOffset: lineOffset + 3,
-		})
-	}
-
-	return items
 }
