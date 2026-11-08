@@ -8,6 +8,7 @@ import (
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
 	"github.com/cedricahenkorah/trail/internal/cli/config"
+	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/charmbracelet/huh"
@@ -89,7 +90,7 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
 		}
 	} else {
-		resolvedProject, resolveErr := resolveProject(projectRegistry, true)
+		resolvedProject, resolveErr := log.ResolveProject(projectRegistry, true)
 
 		if resolveErr != nil {
 			return resolveErr

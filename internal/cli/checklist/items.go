@@ -56,14 +56,19 @@ func ParseItems(content []byte) []Item {
 	return items
 }
 
-func ListFiles(dir string) ([]FileSummary, error) {
+type File struct {
+	Name  string
+	Items []Item
+}
+
+func ReadFiles(dir string) ([]File, error) {
 	entries, err := os.ReadDir(dir)
 
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read directory %s: %w", dir, err)
 	}
 
-	var summaries []FileSummary
+	var files []File
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -80,16 +85,31 @@ func ListFiles(dir string) ([]FileSummary, error) {
 			return nil, fmt.Errorf("read file %s: %w", path, readErr)
 		}
 
-		items := ParseItems(content)
+		files = append(files, File{Name: name, Items: ParseItems(content)})
+	}
+
+	return files, nil
+}
+
+func ListFiles(dir string) ([]FileSummary, error) {
+	files, err := ReadFiles(dir)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var summaries []FileSummary
+
+	for _, file := range files {
 		open := 0
 
-		for _, item := range items {
+		for _, item := range file.Items {
 			if !item.Done {
 				open++
 			}
 		}
 
-		summaries = append(summaries, FileSummary{Name: name, Open: open, Total: len(items)})
+		summaries = append(summaries, FileSummary{Name: file.Name, Open: open, Total: len(file.Items)})
 	}
 
 	return summaries, nil

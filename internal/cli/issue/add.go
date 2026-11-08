@@ -125,7 +125,7 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if matchedProject.Name == "" {
-		resolvedProject, resolveErr := resolveProject(projectRegistry, interactive)
+		resolvedProject, resolveErr := log.ResolveProject(projectRegistry, interactive)
 
 		if resolveErr != nil {
 			return resolveErr
@@ -190,50 +190,4 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 	cmd.Printf("Added issue to %s\n", matchedProject.Name)
 	cmd.Printf("File: %s\n", issueFilePath)
 	return nil
-}
-
-func resolveProject(registry project.ProjectsRegistry, interactive bool) (project.ProjectRecord, error) {
-	matchedProjects, matchErr := log.FindProjectsLinkedToCurrentDirectory(registry)
-
-	if matchErr != nil {
-		return project.ProjectRecord{}, matchErr
-	}
-
-	if len(matchedProjects) == 1 && !matchedProjects[0].Archived {
-		return matchedProjects[0], nil
-	}
-
-	if !interactive {
-		switch len(matchedProjects) {
-		case 0:
-			return project.ProjectRecord{}, fmt.Errorf("no project is linked to the current directory; pass --project <name>")
-		case 1:
-			return project.ProjectRecord{}, fmt.Errorf("project %q is archived; restore it before adding an issue", matchedProjects[0].Name)
-		default:
-			names := make([]string, 0, len(matchedProjects))
-
-			for _, matched := range matchedProjects {
-				names = append(names, matched.Name)
-			}
-
-			return project.ProjectRecord{}, fmt.Errorf(
-				"multiple projects are linked to the current directory: %s; pass --project <name>",
-				strings.Join(names, ", "),
-			)
-		}
-	}
-
-	var activeProjects []project.ProjectRecord
-
-	for _, registeredProject := range registry.Projects {
-		if !registeredProject.Archived {
-			activeProjects = append(activeProjects, registeredProject)
-		}
-	}
-
-	if len(activeProjects) == 0 {
-		return project.ProjectRecord{}, fmt.Errorf("no active projects available; add one with trail project add")
-	}
-
-	return log.ChooseActiveProject(activeProjects)
 }
