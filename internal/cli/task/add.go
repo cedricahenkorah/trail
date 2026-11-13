@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// addCmd represents the add command
 var addCmd = &cobra.Command{
 	Use:   "add [text]",
 	Short: "Add a task to a project",

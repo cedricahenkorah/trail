@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// taskCmd represents the task command
 var taskCmd = &cobra.Command{
 	Use:   "task",
 	Short: "Manage project tasks",
