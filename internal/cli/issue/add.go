@@ -53,16 +53,10 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "adding an issue")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
-	}
-
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
+	if projectErr != nil {
+		return projectErr
 	}
 
 	fileName, fileNameErr := cmd.Flags().GetString("file")
@@ -102,23 +96,7 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var matchedProject core.Project
-
-	if projectFilter != "" {
-		foundProject, findErr := c.Project(projectFilter)
-
-		if findErr != nil {
-			return findErr
-		}
-
-		if foundProject.Archived {
-			return fmt.Errorf("project %q is archived; restore it before adding an issue", foundProject.Name)
-		}
-
-		matchedProject = foundProject
-	}
-
-	if matchedProject.Name == "" {
+	if !projectGiven {
 		resolvedProject, resolveErr := prompt.ResolveProject(projects, interactive)
 
 		if resolveErr != nil {

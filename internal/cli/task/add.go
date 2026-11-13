@@ -55,16 +55,10 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "adding a task entry")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
-	}
-
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
+	if projectErr != nil {
+		return projectErr
 	}
 
 	dueDate, dueDateErr := cmd.Flags().GetString("due")
@@ -111,22 +105,6 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		fileName = normalizedFileName
 	}
 
-	var matchedProject core.Project
-
-	if projectFilter != "" {
-		foundProject, findErr := c.Project(projectFilter)
-
-		if findErr != nil {
-			return findErr
-		}
-
-		if foundProject.Archived {
-			return fmt.Errorf("project %q is archived; restore it before adding a task entry", foundProject.Name)
-		}
-
-		matchedProject = foundProject
-	}
-
 	today := time.Now().Format("2006-01-02")
 
 	if len(args) == 1 {
@@ -136,7 +114,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("task cannot be blank")
 		}
 
-		if matchedProject.Name == "" {
+		if !projectGiven {
 			resolvedProject, resolveErr := prompt.ResolveProject(projects, false)
 
 			if resolveErr != nil {
@@ -163,7 +141,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	} else {
-		if matchedProject.Name == "" {
+		if !projectGiven {
 			resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
 			if resolveErr != nil {

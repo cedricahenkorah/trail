@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
@@ -48,33 +47,13 @@ func runTodayCommand(cmd *cobra.Command, args []string) error {
 		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "viewing today's summary")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
+	if projectErr != nil {
+		return projectErr
 	}
 
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
-	}
-
-	var matchedProject core.Project
-
-	if projectFilter != "" {
-		foundProject, findErr := c.Project(projectFilter)
-
-		if findErr != nil {
-			return findErr
-		}
-
-		if foundProject.Archived {
-			return fmt.Errorf("project %q is archived; restore it before viewing today's summary", foundProject.Name)
-		}
-
-		matchedProject = foundProject
-	} else {
+	if !projectGiven {
 		resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
 		if resolveErr != nil {

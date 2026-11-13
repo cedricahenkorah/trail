@@ -47,16 +47,10 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "adding a log entry")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
-	}
-
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
+	if projectErr != nil {
+		return projectErr
 	}
 
 	dateFilter, dateFilterErr := cmd.Flags().GetString("date")
@@ -69,22 +63,6 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 
 	if cmd.Flags().Changed("date") && dateFilter == "" {
 		return fmt.Errorf("--date requires a date in YYYY-MM-DD format")
-	}
-
-	var matchedProject core.Project
-
-	if projectFilter != "" {
-		foundProject, findErr := c.Project(projectFilter)
-
-		if findErr != nil {
-			return findErr
-		}
-
-		if foundProject.Archived {
-			return fmt.Errorf("project %q is archived; restore it before adding a log entry", foundProject.Name)
-		}
-
-		matchedProject = foundProject
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -106,7 +84,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("note cannot be blank")
 		}
 
-		if matchedProject.Name == "" {
+		if !projectGiven {
 			resolvedProject, resolveErr := prompt.ResolveProject(projects, false)
 
 			if resolveErr != nil {
@@ -126,7 +104,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		cmd.Printf("Log: %s\n", logFilePath)
 		return nil
 	} else {
-		if matchedProject.Name == "" {
+		if !projectGiven {
 			resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
 			if resolveErr != nil {

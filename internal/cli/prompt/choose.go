@@ -9,30 +9,72 @@ import (
 
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
 )
 
-// ResolveProject returns the active project linked to the current directory.
-// If there isn't exactly one, it asks the user to pick one when interactive.
-func ResolveProject(projects []core.Project, interactive bool) (core.Project, error) {
+// ProjectFlag returns the active project named by --project. given is false
+// if the flag wasn't passed; action ends the error for an archived project.
+func ProjectFlag(cmd *cobra.Command, c *core.Core, action string) (p core.Project, given bool, err error) {
+	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+
+	if projectFilterErr != nil {
+		return core.Project{}, false, fmt.Errorf("error reading the project filter: %w", projectFilterErr)
+	}
+
+	projectFilter = strings.TrimSpace(projectFilter)
+
+	if !cmd.Flags().Changed("project") {
+		return core.Project{}, false, nil
+	}
+
+	if projectFilter == "" {
+		return core.Project{}, false, fmt.Errorf("--project requires a project name")
+	}
+
+	foundProject, findErr := c.Project(projectFilter)
+
+	if findErr != nil {
+		return core.Project{}, false, findErr
+	}
+
+	if foundProject.Archived {
+		return core.Project{}, false, fmt.Errorf("project %q is archived; restore it before %s", foundProject.Name, action)
+	}
+
+	return foundProject, true, nil
+}
+
+// LinkedProject returns the active project linked to the current directory.
+// Use [Unresolved] to tell "no single match" apart from other errors.
+func LinkedProject(projects []core.Project) (core.Project, error) {
 	cwd, cwdErr := os.Getwd()
 
 	if cwdErr != nil {
 		return core.Project{}, fmt.Errorf("find current directory %w", cwdErr)
 	}
 
-	resolvedProject, resolveErr := core.ResolveProject(projects, cwd)
+	return core.ResolveProject(projects, cwd)
+}
+
+// Unresolved reports whether err means no single active project is linked.
+func Unresolved(err error) bool {
+	var ambiguousErr *core.AmbiguousProjectError
+
+	return errors.Is(err, core.ErrNoLinkedProject) ||
+		errors.Is(err, core.ErrProjectArchived) ||
+		errors.As(err, &ambiguousErr)
+}
+
+// ResolveProject returns the active project linked to the current directory.
+// If there isn't exactly one, it asks the user to pick one when interactive.
+func ResolveProject(projects []core.Project, interactive bool) (core.Project, error) {
+	resolvedProject, resolveErr := LinkedProject(projects)
 
 	if resolveErr == nil {
 		return resolvedProject, nil
 	}
 
-	var ambiguousErr *core.AmbiguousProjectError
-
-	unresolved := errors.Is(resolveErr, core.ErrNoLinkedProject) ||
-		errors.Is(resolveErr, core.ErrProjectArchived) ||
-		errors.As(resolveErr, &ambiguousErr)
-
-	if !unresolved {
+	if !Unresolved(resolveErr) {
 		return core.Project{}, resolveErr
 	}
 
