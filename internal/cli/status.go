@@ -1,10 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/spf13/cobra"
@@ -60,40 +59,24 @@ func runStatusCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("find current directory %w", cwdErr)
 	}
 
-	var matchedProjects []core.Project
-
-	for _, registeredProject := range projects {
-		if registeredProject.LinkedPath == "" {
-			continue
-		}
-
-		rel, relErr := filepath.Rel(registeredProject.LinkedPath, cwd)
-
-		if relErr != nil {
-			return fmt.Errorf("compare current directory with project %q: %w",
-				registeredProject.Name, relErr)
-		}
-
-		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-			matchedProjects = append(matchedProjects, registeredProject)
-		}
-	}
-
 	currentProject := "none"
 
-	switch len(matchedProjects) {
-	case 0:
-	case 1:
-		currentProject = matchedProjects[0].Name
-	default:
-		names := make([]string, 0, len(matchedProjects))
-		for _, matched := range matchedProjects {
-			names = append(names, matched.Name)
+	resolvedProject, resolveErr := core.ResolveProject(projects, cwd)
+
+	switch {
+	case resolveErr == nil:
+		currentProject = resolvedProject.Name
+	case errors.Is(resolveErr, core.ErrNoLinkedProject):
+	case errors.Is(resolveErr, core.ErrProjectArchived):
+		linkedProjects, linkedErr := core.LinkedTo(projects, cwd)
+
+		if linkedErr != nil {
+			return linkedErr
 		}
-		return fmt.Errorf(
-			"more than one project is linked to the current directory: %s",
-			strings.Join(names, ", "),
-		)
+
+		currentProject = linkedProjects[0].Name + " (archived)"
+	default:
+		return resolveErr
 	}
 
 	cmd.Printf(

@@ -110,33 +110,13 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := FindProjectsLinkedToCurrentDirectory(projects)
+			resolvedProject, resolveErr := prompt.ResolveProject(projects, false)
 
-			if matchedProjectsErr != nil {
-				return matchedProjectsErr
+			if resolveErr != nil {
+				return resolveErr
 			}
 
-			switch len(matchedProjects) {
-			case 0:
-				return fmt.Errorf("no project is linked to the current directory; pass --project <name>")
-			case 1:
-				if matchedProjects[0].Archived {
-					return fmt.Errorf("project %q is archived; restore it before adding a log entry", matchedProjects[0].Name)
-				}
-
-				matchedProject = matchedProjects[0]
-			default:
-				names := make([]string, 0, len(matchedProjects))
-
-				for _, matched := range matchedProjects {
-					names = append(names, matched.Name)
-				}
-
-				return fmt.Errorf(
-					"multiple projects are linked to the current directory: %s; pass --project <name>",
-					strings.Join(names, ", "),
-				)
-			}
+			matchedProject = resolvedProject
 		}
 
 		logFilePath, logFilePathErr := saveLogEntry(c.DataDir(), matchedProject, date, note)
@@ -150,50 +130,13 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return nil
 	} else {
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := FindProjectsLinkedToCurrentDirectory(projects)
+			resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
-			if matchedProjectsErr != nil {
-				return matchedProjectsErr
+			if resolveErr != nil {
+				return resolveErr
 			}
 
-			activeProjects := core.ActiveProjects(projects)
-
-			if len(activeProjects) == 0 {
-				return fmt.Errorf("no active projects available; add one with trail project add")
-			}
-
-			switch len(matchedProjects) {
-			case 0:
-				activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
-
-				if activeProjectErr != nil {
-					return activeProjectErr
-				}
-
-				matchedProject = activeProject
-
-			case 1:
-				if matchedProjects[0].Archived {
-					activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
-
-					if activeProjectErr != nil {
-						return activeProjectErr
-					}
-
-					matchedProject = activeProject
-				} else {
-					matchedProject = matchedProjects[0]
-				}
-
-			default:
-				activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
-
-				if activeProjectErr != nil {
-					return activeProjectErr
-				}
-
-				matchedProject = activeProject
-			}
+			matchedProject = resolvedProject
 		}
 
 		var note string
@@ -226,37 +169,6 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-}
-
-func FindProjectsLinkedToCurrentDirectory(
-	projects []core.Project,
-) ([]core.Project, error) {
-	var matchedProjects []core.Project
-
-	cwd, cwdErr := os.Getwd()
-
-	if cwdErr != nil {
-		return nil, fmt.Errorf("find current directory %w", cwdErr)
-	}
-
-	for _, registeredProject := range projects {
-		if registeredProject.LinkedPath == "" {
-			continue
-		}
-
-		rel, relErr := filepath.Rel(registeredProject.LinkedPath, cwd)
-
-		if relErr != nil {
-			return nil, fmt.Errorf("compare current directory with project %q: %w",
-				registeredProject.Name, relErr)
-		}
-
-		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-			matchedProjects = append(matchedProjects, registeredProject)
-		}
-	}
-
-	return matchedProjects, nil
 }
 
 func ValidateDate(value string) (string, error) {
@@ -367,70 +279,4 @@ func saveLogEntry(
 	}
 
 	return logFilePath, nil
-}
-
-func ChooseActiveProject(activeProjects []core.Project) (core.Project, error) {
-	var chosenProjectName string
-	var options []huh.Option[string]
-
-	for _, p := range activeProjects {
-		options = append(options, huh.NewOption(p.Name, p.Name))
-	}
-
-	selectProjectErr := prompt.Run(huh.NewSelect[string]().
-		Title("Select a project").
-		Options(options...).
-		Value(&chosenProjectName))
-
-	if selectProjectErr != nil {
-		return core.Project{}, fmt.Errorf("choose project: %w", selectProjectErr)
-	}
-
-	for _, p := range activeProjects {
-		if p.Name == chosenProjectName {
-			return p, nil
-		}
-	}
-
-	return core.Project{}, fmt.Errorf("selected project %q was not found", chosenProjectName)
-}
-
-func ResolveProject(projects []core.Project, interactive bool) (core.Project, error) {
-	matchedProjects, matchErr := FindProjectsLinkedToCurrentDirectory(projects)
-
-	if matchErr != nil {
-		return core.Project{}, matchErr
-	}
-
-	if len(matchedProjects) == 1 && !matchedProjects[0].Archived {
-		return matchedProjects[0], nil
-	}
-
-	if !interactive {
-		switch len(matchedProjects) {
-		case 0:
-			return core.Project{}, fmt.Errorf("no project is linked to the current directory; pass --project <name>")
-		case 1:
-			return core.Project{}, fmt.Errorf("project %q is archived; restore it or pass --project <name>", matchedProjects[0].Name)
-		default:
-			names := make([]string, 0, len(matchedProjects))
-
-			for _, matched := range matchedProjects {
-				names = append(names, matched.Name)
-			}
-
-			return core.Project{}, fmt.Errorf(
-				"multiple projects are linked to the current directory: %s; pass --project <name>",
-				strings.Join(names, ", "),
-			)
-		}
-	}
-
-	activeProjects := core.ActiveProjects(projects)
-
-	if len(activeProjects) == 0 {
-		return core.Project{}, fmt.Errorf("no active projects available; add one with trail project add")
-	}
-
-	return ChooseActiveProject(activeProjects)
 }

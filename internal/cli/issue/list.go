@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
@@ -86,7 +85,7 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 
 		matchedProject = foundProject
 	} else {
-		resolvedProject, resolveErr := log.ResolveProject(projects, true)
+		resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
 		if resolveErr != nil {
 			return resolveErr

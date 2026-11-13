@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
@@ -121,7 +120,7 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if matchedProject.Name == "" {
-		resolvedProject, resolveErr := log.ResolveProject(projects, interactive)
+		resolvedProject, resolveErr := prompt.ResolveProject(projects, interactive)
 
 		if resolveErr != nil {
 			return resolveErr

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
@@ -92,33 +91,13 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if !cmd.Flags().Changed("project") {
-		matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projects)
+		resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
-		if matchedProjectsErr != nil {
-			return matchedProjectsErr
+		if resolveErr != nil {
+			return resolveErr
 		}
 
-		activeProjects := core.ActiveProjects(projects)
-
-		if len(activeProjects) == 0 {
-			return fmt.Errorf("no active projects available; add one with trail project add")
-		}
-
-		activeMatches := core.ActiveProjects(matchedProjects)
-
-		switch len(activeMatches) {
-		case 1:
-			matchedProject = activeMatches[0]
-
-		default:
-			activeProject, activeProjectErr := log.ChooseActiveProject(activeProjects)
-
-			if activeProjectErr != nil {
-				return activeProjectErr
-			}
-
-			matchedProject = activeProject
-		}
+		matchedProject = resolvedProject
 	}
 
 	matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)

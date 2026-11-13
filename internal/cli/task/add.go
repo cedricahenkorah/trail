@@ -140,33 +140,13 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		}
 
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projects)
+			resolvedProject, resolveErr := prompt.ResolveProject(projects, false)
 
-			if matchedProjectsErr != nil {
-				return matchedProjectsErr
+			if resolveErr != nil {
+				return resolveErr
 			}
 
-			switch len(matchedProjects) {
-			case 0:
-				return fmt.Errorf("no project is linked to the current directory; pass --project <name>")
-			case 1:
-				if matchedProjects[0].Archived {
-					return fmt.Errorf("project %q is archived; restore it before adding a task", matchedProjects[0].Name)
-				}
-
-				matchedProject = matchedProjects[0]
-			default:
-				names := make([]string, 0, len(matchedProjects))
-
-				for _, matched := range matchedProjects {
-					names = append(names, matched.Name)
-				}
-
-				return fmt.Errorf(
-					"multiple projects are linked to the current directory: %s; pass --project <name>",
-					strings.Join(names, ", "),
-				)
-			}
+			matchedProject = resolvedProject
 		}
 
 		matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
@@ -193,50 +173,13 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		return nil
 	} else {
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projects)
+			resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
-			if matchedProjectsErr != nil {
-				return matchedProjectsErr
+			if resolveErr != nil {
+				return resolveErr
 			}
 
-			activeProjects := core.ActiveProjects(projects)
-
-			if len(activeProjects) == 0 {
-				return fmt.Errorf("no active projects available; add one with trail project add")
-			}
-
-			switch len(matchedProjects) {
-			case 0:
-				activeProject, activeProjectErr := log.ChooseActiveProject(activeProjects)
-
-				if activeProjectErr != nil {
-					return activeProjectErr
-				}
-
-				matchedProject = activeProject
-
-			case 1:
-				if matchedProjects[0].Archived {
-					activeProject, activeProjectErr := log.ChooseActiveProject(activeProjects)
-
-					if activeProjectErr != nil {
-						return activeProjectErr
-					}
-
-					matchedProject = activeProject
-				} else {
-					matchedProject = matchedProjects[0]
-				}
-
-			default:
-				activeProject, activeProjectErr := log.ChooseActiveProject(activeProjects)
-
-				if activeProjectErr != nil {
-					return activeProjectErr
-				}
-
-				matchedProject = activeProject
-			}
+			matchedProject = resolvedProject
 		}
 
 		matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
