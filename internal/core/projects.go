@@ -96,11 +96,7 @@ func (c *Core) Project(name string) (Project, error) {
 		}
 	}
 
-	return Project{}, fmt.Errorf(
-		"%w: %s; run trail project list to see available projects",
-		ErrProjectNotFound,
-		name,
-	)
+	return Project{}, fmt.Errorf("%w: %s", ErrProjectNotFound, name)
 }
 
 // ProjectDir returns the folder holding p's files, or an error if it is missing.

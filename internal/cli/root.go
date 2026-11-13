@@ -26,6 +26,8 @@ var rootCmd = &cobra.Command{
 func Execute(version string) {
 	rootCmd.Version = version
 
+	addHints(rootCmd)
+
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)

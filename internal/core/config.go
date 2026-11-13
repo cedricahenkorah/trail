@@ -47,7 +47,7 @@ func LoadConfig() (Config, string, error) {
 	}
 
 	if len(bytes.TrimSpace(configData)) == 0 {
-		return cfg, configFilePath, fmt.Errorf("%w at %s; run trail init to repair it", ErrEmptyConfig, configFilePath)
+		return cfg, configFilePath, fmt.Errorf("%w at %s", ErrEmptyConfig, configFilePath)
 	}
 
 	parseErr := json.Unmarshal(configData, &cfg)
@@ -93,7 +93,7 @@ func WriteConfig(cfg Config) error {
 // ValidateDataDirectory returns an error if path isn't an existing directory.
 func ValidateDataDirectory(path string) error {
 	if path == "" {
-		return fmt.Errorf("config has no data directory; run trail init to repair it")
+		return ErrNoDataDirectory
 	}
 
 	dataDirInfo, dataDirInfoErr := os.Stat(path)
