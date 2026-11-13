@@ -5,6 +5,9 @@ import (
 	"os"
 )
 
+// ValidateDataDirectory reports whether path can be used as Trail's data
+// directory. It returns an error if path is empty, does not exist, or is
+// not a directory.
 func ValidateDataDirectory(path string) error {
 	if path == "" {
 		return fmt.Errorf("config has no data directory; run trail init to repair it")

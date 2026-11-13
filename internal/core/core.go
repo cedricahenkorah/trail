@@ -1,3 +1,6 @@
+// Package core reads and writes Trail's data directory: the project
+// registry, devlogs, and task and issue files. It contains no UI code,
+// so the CLI and the TUI can both build on it.
 package core
 
 import (
@@ -11,7 +14,8 @@ type Core struct {
 	dataDir string
 }
 
-// Open validates dataDir and returns a Core for it.
+// Open returns a Core for dataDir. It returns an error if dataDir is
+// empty, does not exist, or is not a directory.
 func Open(dataDir string) (*Core, error) {
 	dataDirErr := ValidateDataDirectory(dataDir)
 
@@ -27,6 +31,8 @@ func (c *Core) DataDir() string {
 	return c.dataDir
 }
 
+// Errors returned by this package. Callers can check for them with
+// [errors.Is].
 var (
 	ErrNotInitialized   = errors.New("Trail is not initialized")
 	ErrProjectNotFound  = errors.New("project is not registered")
@@ -36,7 +42,7 @@ var (
 )
 
 // AmbiguousProjectError is returned when more than one project is linked
-// to the same directory.
+// to the same directory. Names lists the matching projects.
 type AmbiguousProjectError struct {
 	Names []string
 }
