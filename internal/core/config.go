@@ -9,15 +9,12 @@ import (
 	"strings"
 )
 
-// Config is Trail's user configuration, stored as JSON in the file
-// returned by [ConfigPath].
+// Config is Trail's user configuration, stored at [ConfigPath].
 type Config struct {
 	DataDirectory string `json:"data_directory"`
 }
 
-// ConfigPath returns the path of Trail's config file inside the user's
-// config directory, such as ~/Library/Application Support/trail/config.json
-// on macOS.
+// ConfigPath returns the path of trail/config.json in the user's config directory.
 func ConfigPath() (string, error) {
 	configDir, configDirErr := os.UserConfigDir()
 
@@ -28,9 +25,8 @@ func ConfigPath() (string, error) {
 	return filepath.Join(configDir, "trail", "config.json"), nil
 }
 
-// LoadConfig reads the config file and returns it with its path. It
-// returns [ErrNotInitialized] if the file does not exist,
-// [ErrEmptyConfig] if it is empty, and an error if it is not valid JSON.
+// LoadConfig returns the config and its path, or [ErrNotInitialized] or
+// [ErrEmptyConfig] if the file is missing or empty.
 func LoadConfig() (Config, string, error) {
 	var cfg Config
 
@@ -63,8 +59,7 @@ func LoadConfig() (Config, string, error) {
 	return cfg, configFilePath, nil
 }
 
-// WriteConfig saves cfg to the config file, creating the config directory
-// if needed. It replaces any existing file.
+// WriteConfig saves cfg, replacing any existing config file.
 func WriteConfig(cfg Config) error {
 	configFilePath, configPathErr := ConfigPath()
 
@@ -95,9 +90,7 @@ func WriteConfig(cfg Config) error {
 	return nil
 }
 
-// ValidateDataDirectory reports whether path can be used as Trail's data
-// directory. It returns an error if path is empty, does not exist, or is
-// not a directory.
+// ValidateDataDirectory returns an error if path isn't an existing directory.
 func ValidateDataDirectory(path string) error {
 	if path == "" {
 		return fmt.Errorf("config has no data directory; run trail init to repair it")
@@ -123,9 +116,7 @@ func ValidateDataDirectory(path string) error {
 	return nil
 }
 
-// PrepareDataDirectory makes sure dataDir can become a new data directory.
-// It creates dataDir if it does not exist, and returns an error if dataDir
-// is a file or a directory that is not empty.
+// PrepareDataDirectory creates dataDir, or fails if it exists and isn't empty.
 func PrepareDataDirectory(dataDir string) error {
 	dataDirInfo, dirInfoErr := os.Stat(dataDir)
 
@@ -158,8 +149,7 @@ func PrepareDataDirectory(dataDir string) error {
 	return nil
 }
 
-// ExpandPath expands a leading ~ to the user's home directory and returns
-// the absolute form of path. It returns an error if path is blank.
+// ExpandPath expands a leading ~ and returns path as an absolute path.
 func ExpandPath(path string) (string, error) {
 	path = strings.TrimSpace(path)
 
