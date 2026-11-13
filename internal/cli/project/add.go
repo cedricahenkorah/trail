@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/config"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -50,13 +50,13 @@ func init() {
 func runProjectAddCommand(cmd *cobra.Command, args []string) error {
 	var projectsRegistry ProjectsRegistry
 
-	cfg, _, configLoadErr := config.Load()
+	cfg, _, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
+	dataDirErr := core.ValidateDataDirectory(cfg.DataDirectory)
 
 	if dataDirErr != nil {
 		return dataDirErr

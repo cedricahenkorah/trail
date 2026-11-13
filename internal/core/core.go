@@ -34,7 +34,8 @@ func (c *Core) DataDir() string {
 // Errors returned by this package. Callers can check for them with
 // [errors.Is].
 var (
-	ErrNotInitialized   = errors.New("Trail is not initialized")
+	ErrNotInitialized   = errors.New("Trail is not initialized; run trail init")
+	ErrEmptyConfig      = errors.New("Trail config is empty")
 	ErrProjectNotFound  = errors.New("project is not registered")
 	ErrProjectArchived  = errors.New("project is archived")
 	ErrNoLinkedProject  = errors.New("no project is linked to the current directory")

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/config"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/spf13/cobra"
 )
@@ -37,13 +37,13 @@ func init() {
 }
 
 func runStatusCmd(cmd *cobra.Command, args []string) error {
-	cfg, cfgFilePath, configLoadErr := config.Load()
+	cfg, cfgFilePath, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
+	dataDirErr := core.ValidateDataDirectory(cfg.DataDirectory)
 
 	if dataDirErr != nil {
 		return dataDirErr

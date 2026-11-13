@@ -1,9 +1,99 @@
 package core
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
+
+// Config is Trail's user configuration, stored as JSON in the file
+// returned by [ConfigPath].
+type Config struct {
+	DataDirectory string `json:"data_directory"`
+}
+
+// ConfigPath returns the path of Trail's config file inside the user's
+// config directory, such as ~/Library/Application Support/trail/config.json
+// on macOS.
+func ConfigPath() (string, error) {
+	configDir, configDirErr := os.UserConfigDir()
+
+	if configDirErr != nil {
+		return "", fmt.Errorf("find Trail config directory: %w", configDirErr)
+	}
+
+	return filepath.Join(configDir, "trail", "config.json"), nil
+}
+
+// LoadConfig reads the config file and returns it with its path. It
+// returns [ErrNotInitialized] if the file does not exist,
+// [ErrEmptyConfig] if it is empty, and an error if it is not valid JSON.
+func LoadConfig() (Config, string, error) {
+	var cfg Config
+
+	configFilePath, configPathErr := ConfigPath()
+
+	if configPathErr != nil {
+		return cfg, "", configPathErr
+	}
+
+	configData, configDataErr := os.ReadFile(configFilePath)
+
+	if os.IsNotExist(configDataErr) {
+		return cfg, configFilePath, ErrNotInitialized
+	}
+
+	if configDataErr != nil {
+		return cfg, configFilePath, fmt.Errorf("read Trail config: %w", configDataErr)
+	}
+
+	if len(bytes.TrimSpace(configData)) == 0 {
+		return cfg, configFilePath, fmt.Errorf("%w at %s; run trail init to repair it", ErrEmptyConfig, configFilePath)
+	}
+
+	parseErr := json.Unmarshal(configData, &cfg)
+
+	if parseErr != nil {
+		return cfg, configFilePath, fmt.Errorf("parse Trail config at %s: %w", configFilePath, parseErr)
+	}
+
+	return cfg, configFilePath, nil
+}
+
+// WriteConfig saves cfg to the config file, creating the config directory
+// if needed. It replaces any existing file.
+func WriteConfig(cfg Config) error {
+	configFilePath, configPathErr := ConfigPath()
+
+	if configPathErr != nil {
+		return configPathErr
+	}
+
+	configDirErr := os.MkdirAll(filepath.Dir(configFilePath), 0700)
+
+	if configDirErr != nil {
+		return fmt.Errorf("create Trail config directory: %w", configDirErr)
+	}
+
+	contents, encodeErr := json.MarshalIndent(cfg, "", " ")
+
+	if encodeErr != nil {
+		return fmt.Errorf("encode Trail config: %w", encodeErr)
+	}
+
+	contents = append(contents, '\n')
+
+	writeErr := writeFileAtomic(configFilePath, contents, 0600)
+
+	if writeErr != nil {
+		return fmt.Errorf("write Trail config: %w", writeErr)
+	}
+
+	return nil
+}
 
 // ValidateDataDirectory reports whether path can be used as Trail's data
 // directory. It returns an error if path is empty, does not exist, or is
@@ -31,4 +121,67 @@ func ValidateDataDirectory(path string) error {
 	}
 
 	return nil
+}
+
+// PrepareDataDirectory makes sure dataDir can become a new data directory.
+// It creates dataDir if it does not exist, and returns an error if dataDir
+// is a file or a directory that is not empty.
+func PrepareDataDirectory(dataDir string) error {
+	dataDirInfo, dirInfoErr := os.Stat(dataDir)
+
+	if dirInfoErr != nil && !os.IsNotExist(dirInfoErr) {
+		return fmt.Errorf("inspect data directory: %w", dirInfoErr)
+	}
+
+	if dirInfoErr == nil {
+		if !dataDirInfo.IsDir() {
+			return fmt.Errorf("data directory path is a file: %s", dataDir)
+		}
+
+		entries, readDirErr := os.ReadDir(dataDir)
+
+		if readDirErr != nil {
+			return fmt.Errorf("read data directory: %w", readDirErr)
+		}
+
+		if len(entries) > 0 {
+			return fmt.Errorf("data directory is not empty: %s", dataDir)
+		}
+	}
+
+	dirCreateErr := os.MkdirAll(dataDir, 0700)
+
+	if dirCreateErr != nil {
+		return fmt.Errorf("create data directory: %w", dirCreateErr)
+	}
+
+	return nil
+}
+
+// ExpandPath expands a leading ~ to the user's home directory and returns
+// the absolute form of path. It returns an error if path is blank.
+func ExpandPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+
+	if path == "" {
+		return "", fmt.Errorf("path cannot be empty")
+	}
+
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, homeDirErr := os.UserHomeDir()
+
+		if homeDirErr != nil {
+			return "", fmt.Errorf("find home directory: %w", homeDirErr)
+		}
+
+		path = filepath.Join(home, strings.TrimPrefix(path, "~"))
+	}
+
+	absolutePath, absErr := filepath.Abs(path)
+
+	if absErr != nil {
+		return "", fmt.Errorf("resolve path %s: %w", path, absErr)
+	}
+
+	return absolutePath, nil
 }
