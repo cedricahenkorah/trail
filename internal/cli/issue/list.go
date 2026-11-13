@@ -2,11 +2,8 @@ package issue
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
@@ -94,20 +91,8 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 		matchedProject = resolvedProject
 	}
 
-	projectDir, projectDirErr := c.ProjectDir(matchedProject)
-
-	if projectDirErr != nil {
-		return projectDirErr
-	}
-
-	issueDir, issueDirErr := checklist.ResolveDir(projectDir, checklist.Issues)
-
-	if issueDirErr != nil {
-		return issueDirErr
-	}
-
 	for {
-		summaries, listErr := checklist.ListFiles(issueDir)
+		summaries, listErr := c.Files(matchedProject, core.Issues)
 
 		if listErr != nil {
 			return listErr
@@ -148,15 +133,19 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		chosenFilePath := filepath.Join(issueDir, chosenFile)
+		chosenFilePath, chosenFilePathErr := c.FilePath(matchedProject, core.Issues, chosenFile)
 
-		content, readErr := os.ReadFile(chosenFilePath)
-
-		if readErr != nil {
-			return fmt.Errorf("read issue file %s: %w", chosenFilePath, readErr)
+		if chosenFilePathErr != nil {
+			return chosenFilePathErr
 		}
 
-		items := checklist.ParseItems(content)
+		content, readErr := c.ReadFile(matchedProject, core.Issues, chosenFile)
+
+		if readErr != nil {
+			return readErr
+		}
+
+		items := core.ParseItems(content)
 
 		cmd.Printf("%s / %s\n\n", matchedProject.Name, chosenFile)
 
@@ -203,7 +192,7 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("select issues: %w", toggleErr)
 		}
 
-		changed, saveErr := checklist.SetDone(chosenFilePath, content, items, closedIndexes)
+		changed, saveErr := core.SetDone(chosenFilePath, content, items, closedIndexes)
 
 		if saveErr != nil {
 			return saveErr

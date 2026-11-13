@@ -5,11 +5,8 @@ package task
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
@@ -100,20 +97,8 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 		matchedProject = resolvedProject
 	}
 
-	matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
-
-	if matchedProjectDirErr != nil {
-		return matchedProjectDirErr
-	}
-
-	taskDir, taskDirErr := checklist.ResolveDir(matchedProjectDir, checklist.Tasks)
-
-	if taskDirErr != nil {
-		return taskDirErr
-	}
-
 	for {
-		summaries, listErr := checklist.ListFiles(taskDir)
+		summaries, listErr := c.Files(matchedProject, core.Tasks)
 
 		if listErr != nil {
 			return listErr
@@ -160,15 +145,19 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		chosenFilePath := filepath.Join(taskDir, chosenFile)
+		chosenFilePath, chosenFilePathErr := c.FilePath(matchedProject, core.Tasks, chosenFile)
 
-		chosenFileContent, chosenFileContentErr := os.ReadFile(chosenFilePath)
-
-		if chosenFileContentErr != nil {
-			return fmt.Errorf("read task file: %w", chosenFileContentErr)
+		if chosenFilePathErr != nil {
+			return chosenFilePathErr
 		}
 
-		parsedChosenFileTaskItems := checklist.ParseItems(chosenFileContent)
+		chosenFileContent, chosenFileContentErr := c.ReadFile(matchedProject, core.Tasks, chosenFile)
+
+		if chosenFileContentErr != nil {
+			return chosenFileContentErr
+		}
+
+		parsedChosenFileTaskItems := core.ParseItems(chosenFileContent)
 
 		cmd.Printf("%s / %s\n\n", matchedProject.Name, chosenFile)
 
@@ -215,7 +204,7 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("select tasks: %w", toggleTasksErr)
 		}
 
-		changed, saveErr := checklist.SetDone(chosenFilePath, chosenFileContent, parsedChosenFileTaskItems, completedIndexes)
+		changed, saveErr := core.SetDone(chosenFilePath, chosenFileContent, parsedChosenFileTaskItems, completedIndexes)
 
 		if saveErr != nil {
 			return saveErr

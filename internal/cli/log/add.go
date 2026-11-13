@@ -2,8 +2,6 @@ package log
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -93,7 +91,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 	date := time.Now().Format("2006-01-02")
 
 	if dateFilter != "" {
-		validatedDate, validatedDateErr := ValidateDate(dateFilter)
+		validatedDate, validatedDateErr := core.ValidateDate(dateFilter)
 
 		if validatedDateErr != nil {
 			return validatedDateErr
@@ -119,7 +117,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 			matchedProject = resolvedProject
 		}
 
-		logFilePath, logFilePathErr := saveLogEntry(c.DataDir(), matchedProject, date, note)
+		logFilePath, logFilePathErr := c.AddLogEntry(matchedProject, date, note)
 
 		if logFilePathErr != nil {
 			return logFilePathErr
@@ -157,7 +155,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 
 		note = strings.TrimSpace(note)
 
-		logFilePath, logFilePathErr := saveLogEntry(c.DataDir(), matchedProject, date, note)
+		logFilePath, logFilePathErr := c.AddLogEntry(matchedProject, date, note)
 
 		if logFilePathErr != nil {
 			return logFilePathErr
@@ -169,114 +167,4 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-}
-
-func ValidateDate(value string) (string, error) {
-	parsedDate, parsedDateErr := time.Parse("2006-01-02", value)
-
-	if parsedDateErr != nil {
-		return "", fmt.Errorf("invalid date %q: use YYYY-MM-DD", value)
-	}
-
-	value = parsedDate.Format("2006-01-02")
-
-	return value, nil
-}
-
-func saveLogEntry(
-	dataDir string,
-	selectedProject core.Project,
-	date string,
-	note string,
-) (string, error) {
-	matchedProjectDir := filepath.Join(dataDir, "projects", selectedProject.Name)
-
-	matchedProjectInfo, matchedProjectInfoErr := os.Stat(matchedProjectDir)
-
-	if os.IsNotExist(matchedProjectInfoErr) {
-		return "", fmt.Errorf("project %q is registered but its folder is missing: %s", selectedProject.Name, matchedProjectDir)
-	}
-
-	if matchedProjectInfoErr != nil {
-		return "", fmt.Errorf("check project folder %s: %w", matchedProjectDir, matchedProjectInfoErr)
-	}
-
-	if !matchedProjectInfo.IsDir() {
-		return "", fmt.Errorf("project folder is not a directory: %s", matchedProjectDir)
-	}
-
-	logDir := filepath.Join(matchedProjectDir, "log")
-
-	logDirInfo, logDirInfoErr := os.Stat(logDir)
-
-	if logDirInfoErr != nil && !os.IsNotExist(logDirInfoErr) {
-		return "", fmt.Errorf("check log dir: %w", logDirInfoErr)
-	}
-
-	if os.IsNotExist(logDirInfoErr) {
-		createLogDirErr := os.MkdirAll(logDir, 0700)
-
-		if createLogDirErr != nil {
-			return "", fmt.Errorf("create log dir: %w", createLogDirErr)
-		}
-	}
-
-	if logDirInfoErr == nil && !logDirInfo.IsDir() {
-		return "", fmt.Errorf("project log folder is not a directory: %s", logDir)
-	}
-
-	logFilePath := filepath.Join(logDir, date+".md")
-
-	logFile, logFileErr := os.OpenFile(logFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-
-	if os.IsExist(logFileErr) {
-		// append the contents
-		existingLog, existingLogErr := os.ReadFile(logFilePath)
-
-		if existingLogErr != nil {
-			return "", fmt.Errorf("read daily log %s: %w", logFilePath, existingLogErr)
-		}
-
-		entry := fmt.Sprintf("- %s\n", note)
-
-		if len(existingLog) > 0 && existingLog[len(existingLog)-1] != '\n' {
-			entry = "\n" + entry
-		}
-
-		logFile, logFileErr := os.OpenFile(logFilePath, os.O_WRONLY|os.O_APPEND, 0)
-
-		if logFileErr != nil {
-			return "", fmt.Errorf("open daily log %s: %w", logFilePath, logFileErr)
-		}
-
-		_, writeErr := logFile.Write([]byte(entry))
-		closeErr := logFile.Close()
-
-		if writeErr != nil {
-			return "", fmt.Errorf("append daily log %s: %w", logFilePath, writeErr)
-		}
-
-		if closeErr != nil {
-			return "", fmt.Errorf("close daily log %s: %w", logFilePath, closeErr)
-		}
-
-	} else if logFileErr != nil {
-		return "", fmt.Errorf("create daily log %s: %w", logFilePath, logFileErr)
-	} else {
-		// write to the new file
-		logContent := fmt.Sprintf("# %s\n\n- %s\n", date, note)
-
-		_, writeLogErr := logFile.Write([]byte(logContent))
-		closeLogErr := logFile.Close()
-
-		if writeLogErr != nil {
-			return "", fmt.Errorf("write daily log %s: %w", logFilePath, writeLogErr)
-		}
-
-		if closeLogErr != nil {
-			return "", fmt.Errorf("close daily log %s: %w", logFilePath, closeLogErr)
-		}
-	}
-
-	return logFilePath, nil
 }

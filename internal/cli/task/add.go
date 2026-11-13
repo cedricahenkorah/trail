@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
@@ -83,7 +81,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if cmd.Flags().Changed("due") && dueDate != "" {
-		validatedDate, validatedDateErr := log.ValidateDate(dueDate)
+		validatedDate, validatedDateErr := core.ValidateDate(dueDate)
 
 		if validatedDateErr != nil {
 			return validatedDateErr
@@ -105,7 +103,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	if cmd.Flags().Changed("file") && fileName != "" {
-		normalizedFileName, normalizedFileNameErr := checklist.NormalizeFilename(fileName)
+		normalizedFileName, normalizedFileNameErr := core.NormalizeFilename(fileName)
 
 		if normalizedFileNameErr != nil {
 			return normalizedFileNameErr
@@ -149,17 +147,11 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			matchedProject = resolvedProject
 		}
 
-		matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
-
-		if matchedProjectDirErr != nil {
-			return matchedProjectDirErr
-		}
-
 		if fileName == "" {
 			fileName = today + ".md"
 		}
 
-		taskFilePath, saveTaskErr := checklist.AddItem(matchedProjectDir, checklist.Tasks, fileName, today, formatTaskItem(task, dueDate))
+		taskFilePath, saveTaskErr := c.AddItem(matchedProject, core.Tasks, fileName, today, core.WithDue(task, dueDate))
 
 		if saveTaskErr != nil {
 			return saveTaskErr
@@ -182,20 +174,14 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			matchedProject = resolvedProject
 		}
 
-		matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
-
-		if matchedProjectDirErr != nil {
-			return matchedProjectDirErr
-		}
-
-		taskDir, taskDirErr := checklist.ResolveDir(matchedProjectDir, checklist.Tasks)
-
-		if taskDirErr != nil {
-			return taskDirErr
-		}
-
 		if fileName == "" {
-			chosenFile, chooseFileErr := checklist.ChooseFile(taskDir, checklist.Tasks, today)
+			taskFiles, taskFilesErr := c.Files(matchedProject, core.Tasks)
+
+			if taskFilesErr != nil {
+				return taskFilesErr
+			}
+
+			chosenFile, chooseFileErr := prompt.ChooseFile(taskFiles, today)
 
 			if chooseFileErr != nil {
 				return chooseFileErr
@@ -235,7 +221,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 						return nil
 					}
 
-					_, validatedDateErr := log.ValidateDate(s)
+					_, validatedDateErr := core.ValidateDate(s)
 
 					if validatedDateErr != nil {
 						return validatedDateErr
@@ -252,7 +238,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			dueDate = strings.TrimSpace(dueDate)
 		}
 
-		taskFilePath, saveTaskErr := checklist.AddItem(matchedProjectDir, checklist.Tasks, fileName, today, formatTaskItem(task, dueDate))
+		taskFilePath, saveTaskErr := c.AddItem(matchedProject, core.Tasks, fileName, today, core.WithDue(task, dueDate))
 
 		if saveTaskErr != nil {
 			return saveTaskErr
@@ -265,13 +251,4 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
-}
-
-// formatTaskItem appends the optional due-date marker to the task text.
-func formatTaskItem(task, dueDate string) string {
-	if dueDate == "" {
-		return task
-	}
-
-	return fmt.Sprintf("%s @due(%s)", task, dueDate)
 }

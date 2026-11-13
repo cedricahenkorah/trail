@@ -2,12 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/spf13/cobra"
@@ -87,117 +84,41 @@ func runTodayCommand(cmd *cobra.Command, args []string) error {
 		matchedProject = resolvedProject
 	}
 
-	projectDir, projectDirErr := c.ProjectDir(matchedProject)
-
-	if projectDirErr != nil {
-		return projectDirErr
-	}
-
 	today := time.Now().Format("2006-01-02")
 
-	devlog, devlogErr := readDevlog(projectDir, today)
+	summary, summaryErr := c.Today(matchedProject, today)
 
-	if devlogErr != nil {
-		return devlogErr
-	}
-
-	openTasks, openTasksErr := readOpenItems(projectDir, checklist.Tasks)
-
-	if openTasksErr != nil {
-		return openTasksErr
-	}
-
-	openIssues, openIssuesErr := readOpenItems(projectDir, checklist.Issues)
-
-	if openIssuesErr != nil {
-		return openIssuesErr
+	if summaryErr != nil {
+		return summaryErr
 	}
 
 	cmd.Printf("%s · %s\n\n", matchedProject.Name, today)
 
 	cmd.Println("Devlog")
 
-	if len(devlog) == 0 {
+	if len(summary.Devlog) == 0 {
 		cmd.Println("  No entries yet. Add one with trail log add.")
 	}
 
-	for _, entry := range devlog {
+	for _, entry := range summary.Devlog {
 		cmd.Printf("  %s\n", entry)
 	}
 
 	cmd.Println()
 
-	printOpenItems(cmd, "Open tasks", openTasks, func(text string) string {
-		return formatDueLabel(text, today)
+	printOpenItems(cmd, "Open tasks", summary.Tasks, func(item core.Item) string {
+		return formatDueLabel(item, today)
 	})
 
 	cmd.Println()
-	printOpenItems(cmd, "Unresolved issues", openIssues, func(text string) string {
-		return text
+	printOpenItems(cmd, "Unresolved issues", summary.Issues, func(item core.Item) string {
+		return item.Text
 	})
 
 	return nil
 }
 
-func readDevlog(projectDir, today string) ([]string, error) {
-	logFilePath := filepath.Join(projectDir, "log", today+".md")
-
-	content, readErr := os.ReadFile(logFilePath)
-
-	if os.IsNotExist(readErr) {
-		return nil, nil
-	}
-
-	if readErr != nil {
-		return nil, fmt.Errorf("read log file %s: %w", logFilePath, readErr)
-	}
-
-	var entries []string
-
-	for line := range strings.SplitSeq(string(content), "\n") {
-		line = strings.TrimSuffix(line, "\r")
-
-		if entry, ok := strings.CutPrefix(line, "- "); ok {
-			entries = append(entries, entry)
-		}
-	}
-
-	return entries, nil
-}
-
-func readOpenItems(projectDir string, kind checklist.Kind) ([]checklist.File, error) {
-	dir, dirErr := checklist.ResolveDir(projectDir, kind)
-
-	if dirErr != nil {
-		return nil, dirErr
-	}
-
-	files, readErr := checklist.ReadFiles(dir)
-
-	if readErr != nil {
-		return nil, readErr
-	}
-
-	var openFiles []checklist.File
-
-	for _, file := range files {
-		var openItems []checklist.Item
-
-		for _, item := range file.Items {
-			if !item.Done {
-				openItems = append(openItems, item)
-			}
-		}
-
-		if len(openItems) > 0 {
-			openFiles = append(openFiles, checklist.File{Name: file.Name, Items: openItems})
-		}
-	}
-
-	return openFiles, nil
-}
-
-func printOpenItems(cmd *cobra.Command, heading string, files []checklist.File, format func(string) string) {
+func printOpenItems(cmd *cobra.Command, heading string, files []core.ChecklistFile, format func(core.Item) string) {
 	count := 0
 
 	for _, file := range files {
@@ -215,34 +136,22 @@ func printOpenItems(cmd *cobra.Command, heading string, files []checklist.File, 
 		cmd.Printf("  %s\n", file.Name)
 
 		for _, item := range file.Items {
-			cmd.Printf("    %s\n", format(item.Text))
+			cmd.Printf("    %s\n", format(item))
 		}
 	}
 }
 
-func formatDueLabel(text, today string) string {
-	const prefix = " @due("
+func formatDueLabel(item core.Item, today string) string {
+	rest, _, _ := core.ParseDue(item.Text)
 
-	start := strings.LastIndex(text, prefix)
-
-	if start == -1 || !strings.HasSuffix(text, ")") {
-		return text
-	}
-
-	date := text[start+len(prefix) : len(text)-1]
-
-	if _, parseErr := time.Parse("2006-01-02", date); parseErr != nil {
-		return text
-	}
-
-	rest := text[:start]
-
-	switch {
-	case date < today:
-		return fmt.Sprintf("%s (overdue: %s)", rest, date)
-	case date == today:
+	switch item.DueStatus(today) {
+	case core.Overdue:
+		return fmt.Sprintf("%s (overdue: %s)", rest, item.Due)
+	case core.DueToday:
 		return rest + " (due today)"
+	case core.Upcoming:
+		return fmt.Sprintf("%s (due %s)", rest, item.Due)
 	default:
-		return fmt.Sprintf("%s (due %s)", rest, date)
+		return item.Text
 	}
 }
