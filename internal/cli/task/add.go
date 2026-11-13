@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/cedricahenkorah/trail/internal/cli/log"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -47,16 +46,16 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		return configLoadErr
 	}
 
-	dataDirErr := core.ValidateDataDirectory(cfg.DataDirectory)
+	c, openErr := core.Open(cfg.DataDirectory)
 
-	if dataDirErr != nil {
-		return dataDirErr
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
 	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
@@ -115,25 +114,20 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		fileName = normalizedFileName
 	}
 
-	var matchedProject project.ProjectRecord
+	var matchedProject core.Project
 
 	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
+		foundProject, findErr := c.Project(projectFilter)
 
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before adding a task entry", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
+		if findErr != nil {
+			return findErr
 		}
 
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
+		if foundProject.Archived {
+			return fmt.Errorf("project %q is archived; restore it before adding a task entry", foundProject.Name)
 		}
+
+		matchedProject = foundProject
 	}
 
 	today := time.Now().Format("2006-01-02")
@@ -146,7 +140,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		}
 
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projectRegistry)
+			matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projects)
 
 			if matchedProjectsErr != nil {
 				return matchedProjectsErr
@@ -175,7 +169,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
+		matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
 
 		if matchedProjectDirErr != nil {
 			return matchedProjectDirErr
@@ -199,21 +193,13 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 		return nil
 	} else {
 		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projectRegistry)
+			matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projects)
 
 			if matchedProjectsErr != nil {
 				return matchedProjectsErr
 			}
 
-			var activeProjects []project.ProjectRecord
-
-			for _, registeredProject := range projectRegistry.Projects {
-				if registeredProject.Archived {
-					continue
-				}
-
-				activeProjects = append(activeProjects, registeredProject)
-			}
+			activeProjects := core.ActiveProjects(projects)
 
 			if len(activeProjects) == 0 {
 				return fmt.Errorf("no active projects available; add one with trail project add")
@@ -253,7 +239,7 @@ func runTaskAddCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
+		matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
 
 		if matchedProjectDirErr != nil {
 			return matchedProjectDirErr

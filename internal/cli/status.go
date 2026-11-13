@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/core"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/spf13/cobra"
 )
 
@@ -43,16 +42,16 @@ func runStatusCmd(cmd *cobra.Command, args []string) error {
 		return configLoadErr
 	}
 
-	dataDirErr := core.ValidateDataDirectory(cfg.DataDirectory)
+	c, openErr := core.Open(cfg.DataDirectory)
 
-	if dataDirErr != nil {
-		return dataDirErr
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
 	cwd, cwdErr := os.Getwd()
@@ -61,9 +60,9 @@ func runStatusCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("find current directory %w", cwdErr)
 	}
 
-	var matchedProjects []project.ProjectRecord
+	var matchedProjects []core.Project
 
-	for _, registeredProject := range projectRegistry.Projects {
+	for _, registeredProject := range projects {
 		if registeredProject.LinkedPath == "" {
 			continue
 		}

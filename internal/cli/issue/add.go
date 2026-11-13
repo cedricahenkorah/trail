@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/cedricahenkorah/trail/internal/cli/log"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -44,14 +43,16 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 		return configLoadErr
 	}
 
-	if dataDirErr := core.ValidateDataDirectory(cfg.DataDirectory); dataDirErr != nil {
-		return dataDirErr
+	c, openErr := core.Open(cfg.DataDirectory)
+
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
 	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
@@ -103,29 +104,24 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var matchedProject project.ProjectRecord
+	var matchedProject core.Project
 
 	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
+		foundProject, findErr := c.Project(projectFilter)
 
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before adding an issue", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
+		if findErr != nil {
+			return findErr
 		}
 
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
+		if foundProject.Archived {
+			return fmt.Errorf("project %q is archived; restore it before adding an issue", foundProject.Name)
 		}
+
+		matchedProject = foundProject
 	}
 
 	if matchedProject.Name == "" {
-		resolvedProject, resolveErr := log.ResolveProject(projectRegistry, interactive)
+		resolvedProject, resolveErr := log.ResolveProject(projects, interactive)
 
 		if resolveErr != nil {
 			return resolveErr
@@ -136,7 +132,7 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 
 	today := time.Now().Format("2006-01-02")
 
-	projectDir, projectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
+	projectDir, projectDirErr := c.ProjectDir(matchedProject)
 
 	if projectDirErr != nil {
 		return projectDirErr

@@ -10,10 +10,9 @@ import (
 	"strings"
 
 	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/cedricahenkorah/trail/internal/cli/log"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -52,16 +51,16 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 		return configLoadErr
 	}
 
-	dataDirErr := core.ValidateDataDirectory(cfg.DataDirectory)
+	c, openErr := core.Open(cfg.DataDirectory)
 
-	if dataDirErr != nil {
-		return dataDirErr
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
 	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
@@ -76,57 +75,36 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--project requires a project name")
 	}
 
-	var matchedProject project.ProjectRecord
+	var matchedProject core.Project
 
 	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
+		foundProject, findErr := c.Project(projectFilter)
 
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before filtering by this project", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
+		if findErr != nil {
+			return findErr
 		}
 
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
+		if foundProject.Archived {
+			return fmt.Errorf("project %q is archived; restore it before filtering by this project", foundProject.Name)
 		}
+
+		matchedProject = foundProject
 	}
 
 	if !cmd.Flags().Changed("project") {
-		matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projectRegistry)
+		matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projects)
 
 		if matchedProjectsErr != nil {
 			return matchedProjectsErr
 		}
 
-		var activeProjects []project.ProjectRecord
-
-		for _, registeredProject := range projectRegistry.Projects {
-			if registeredProject.Archived {
-				continue
-			}
-
-			activeProjects = append(activeProjects, registeredProject)
-		}
+		activeProjects := core.ActiveProjects(projects)
 
 		if len(activeProjects) == 0 {
 			return fmt.Errorf("no active projects available; add one with trail project add")
 		}
 
-		var activeMatches []project.ProjectRecord
-
-		for _, matched := range matchedProjects {
-			if matched.Archived {
-				continue
-			}
-
-			activeMatches = append(activeMatches, matched)
-		}
+		activeMatches := core.ActiveProjects(matchedProjects)
 
 		switch len(activeMatches) {
 		case 1:
@@ -143,7 +121,7 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
+	matchedProjectDir, matchedProjectDirErr := c.ProjectDir(matchedProject)
 
 	if matchedProjectDirErr != nil {
 		return matchedProjectDirErr
