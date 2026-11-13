@@ -13,7 +13,11 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "trail",
 	Short: "Trail CLI",
-	Long:  `Trail is a local CLI for tracking work across your projects. Capture devlog notes, manage tasks and issues in Markdown, and see what needs attention today. When it’s time for a standup, Trail brings together your recorded activity and optional Git commits to help you draft an update that you review and finalize yourself.`,
+	Long: `Trail is a local CLI for tracking work across your projects. Capture devlog notes, manage tasks and issues in Markdown, and see what needs attention today. When it’s time for a standup, Trail brings together your recorded activity and optional Git commits to help you draft an update that you review and finalize yourself.
+
+Run trail with no command to open the terminal UI.`,
+	Args: cobra.NoArgs,
+	RunE: runTUI,
 }
 
 // Execute runs the trail command. version is shown by trail --version.
