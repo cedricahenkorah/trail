@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/cedricahenkorah/trail/internal/core"
 )
 
 type Config struct {
@@ -50,27 +52,8 @@ func Load() (Config, string, error) {
 	return cfg, configFilePath, nil
 }
 
+// ValidateDataDirectory has moved to core; this wrapper keeps the CLI
+// working until its commands switch to core.Open.
 func ValidateDataDirectory(path string) error {
-	if path == "" {
-		return fmt.Errorf("config has no data directory; run trail init to repair it")
-	}
-
-	dataDirInfo, dataDirInfoErr := os.Stat(path)
-
-	if os.IsNotExist(dataDirInfoErr) {
-		return fmt.Errorf(
-			"configured data directory was not found: %s; check whether it was moved or deleted",
-			path,
-		)
-	}
-
-	if dataDirInfoErr != nil {
-		return fmt.Errorf("inspect configured data directory: %w", dataDirInfoErr)
-	}
-
-	if !dataDirInfo.IsDir() {
-		return fmt.Errorf("configured data directory path is not a directory: %s", path)
-	}
-
-	return nil
+	return core.ValidateDataDirectory(path)
 }
