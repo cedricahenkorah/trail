@@ -173,6 +173,8 @@ func (m model) handleKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Reload):
 		m.err = nil
 		return m, loadProjects(m.core)
+	case key.Matches(msg, m.keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
 	default:
 		return m.updateFocused(msg)
 	}
@@ -442,9 +444,15 @@ func (m model) nextPane(step int) pane {
 	}
 }
 
-// footer is the error line, if any, above the help bar.
+// footer returns the help bar for the focused pane, with the error above it if there is one.
 func (m model) footer() string {
-	footer := m.help.View(m.keys)
+	l := m.focusedList()
+
+	footer := m.help.View(paneHelp{
+		keys:      m.keys,
+		focus:     m.focus,
+		filtering: l != nil && l.FilterState() == list.Filtering,
+	})
 
 	if m.err != nil {
 		status := errorStyle.Inline(true).MaxWidth(m.width).Render("Error: " + m.err.Error())
