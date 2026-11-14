@@ -2,19 +2,15 @@ package log
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/cedricahenkorah/trail/internal/cli/config"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
-// addCmd represents the add command
 var addCmd = &cobra.Command{
 	Use:   "add [note]",
 	Short: "Add a note to a project's daily log",
@@ -33,34 +29,28 @@ func init() {
 }
 
 func runLogAddCmd(cmd *cobra.Command, args []string) error {
-	cfg, _, configLoadErr := config.Load()
+	cfg, _, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
+	c, openErr := core.Open(cfg.DataDirectory)
 
-	if dataDirErr != nil {
-		return dataDirErr
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "adding a log entry")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
-	}
-
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
+	if projectErr != nil {
+		return projectErr
 	}
 
 	dateFilter, dateFilterErr := cmd.Flags().GetString("date")
@@ -75,31 +65,10 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--date requires a date in YYYY-MM-DD format")
 	}
 
-	var matchedProject project.ProjectRecord
-
-	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
-
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before adding a log entry", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
-		}
-
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
-		}
-	}
-
 	date := time.Now().Format("2006-01-02")
 
 	if dateFilter != "" {
-		validatedDate, validatedDateErr := ValidateDate(dateFilter)
+		validatedDate, validatedDateErr := core.ValidateDate(dateFilter)
 
 		if validatedDateErr != nil {
 			return validatedDateErr
@@ -115,37 +84,17 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("note cannot be blank")
 		}
 
-		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := FindProjectsLinkedToCurrentDirectory(projectRegistry)
+		if !projectGiven {
+			resolvedProject, resolveErr := prompt.ResolveProject(projects, false)
 
-			if matchedProjectsErr != nil {
-				return matchedProjectsErr
+			if resolveErr != nil {
+				return resolveErr
 			}
 
-			switch len(matchedProjects) {
-			case 0:
-				return fmt.Errorf("no project is linked to the current directory; pass --project <name>")
-			case 1:
-				if matchedProjects[0].Archived {
-					return fmt.Errorf("project %q is archived; restore it before adding a log entry", matchedProjects[0].Name)
-				}
-
-				matchedProject = matchedProjects[0]
-			default:
-				names := make([]string, 0, len(matchedProjects))
-
-				for _, matched := range matchedProjects {
-					names = append(names, matched.Name)
-				}
-
-				return fmt.Errorf(
-					"multiple projects are linked to the current directory: %s; pass --project <name>",
-					strings.Join(names, ", "),
-				)
-			}
+			matchedProject = resolvedProject
 		}
 
-		logFilePath, logFilePathErr := saveLogEntry(cfg.DataDirectory, matchedProject, date, note)
+		logFilePath, logFilePathErr := c.AddLogEntry(matchedProject, date, note)
 
 		if logFilePathErr != nil {
 			return logFilePathErr
@@ -155,59 +104,14 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		cmd.Printf("Log: %s\n", logFilePath)
 		return nil
 	} else {
-		if matchedProject.Name == "" {
-			matchedProjects, matchedProjectsErr := FindProjectsLinkedToCurrentDirectory(projectRegistry)
+		if !projectGiven {
+			resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
-			if matchedProjectsErr != nil {
-				return matchedProjectsErr
+			if resolveErr != nil {
+				return resolveErr
 			}
 
-			var activeProjects []project.ProjectRecord
-
-			for _, registeredProject := range projectRegistry.Projects {
-				if registeredProject.Archived {
-					continue
-				}
-
-				activeProjects = append(activeProjects, registeredProject)
-			}
-
-			if len(activeProjects) == 0 {
-				return fmt.Errorf("no active projects available; add one with trail project add")
-			}
-
-			switch len(matchedProjects) {
-			case 0:
-				activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
-
-				if activeProjectErr != nil {
-					return activeProjectErr
-				}
-
-				matchedProject = activeProject
-
-			case 1:
-				if matchedProjects[0].Archived {
-					activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
-
-					if activeProjectErr != nil {
-						return activeProjectErr
-					}
-
-					matchedProject = activeProject
-				} else {
-					matchedProject = matchedProjects[0]
-				}
-
-			default:
-				activeProject, activeProjectErr := ChooseActiveProject(activeProjects)
-
-				if activeProjectErr != nil {
-					return activeProjectErr
-				}
-
-				matchedProject = activeProject
-			}
+			matchedProject = resolvedProject
 		}
 
 		var note string
@@ -228,7 +132,7 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 
 		note = strings.TrimSpace(note)
 
-		logFilePath, logFilePathErr := saveLogEntry(cfg.DataDirectory, matchedProject, date, note)
+		logFilePath, logFilePathErr := c.AddLogEntry(matchedProject, date, note)
 
 		if logFilePathErr != nil {
 			return logFilePathErr
@@ -240,217 +144,4 @@ func runLogAddCmd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-}
-
-func FindProjectsLinkedToCurrentDirectory(
-	registry project.ProjectsRegistry,
-) ([]project.ProjectRecord, error) {
-	var matchedProjects []project.ProjectRecord
-
-	cwd, cwdErr := os.Getwd()
-
-	if cwdErr != nil {
-		return nil, fmt.Errorf("find current directory %w", cwdErr)
-	}
-
-	for _, registeredProject := range registry.Projects {
-		if registeredProject.LinkedPath == "" {
-			continue
-		}
-
-		rel, relErr := filepath.Rel(registeredProject.LinkedPath, cwd)
-
-		if relErr != nil {
-			return nil, fmt.Errorf("compare current directory with project %q: %w",
-				registeredProject.Name, relErr)
-		}
-
-		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-			matchedProjects = append(matchedProjects, registeredProject)
-		}
-	}
-
-	return matchedProjects, nil
-}
-
-func ValidateDate(value string) (string, error) {
-	parsedDate, parsedDateErr := time.Parse("2006-01-02", value)
-
-	if parsedDateErr != nil {
-		return "", fmt.Errorf("invalid date %q: use YYYY-MM-DD", value)
-	}
-
-	value = parsedDate.Format("2006-01-02")
-
-	return value, nil
-}
-
-func saveLogEntry(
-	dataDir string,
-	selectedProject project.ProjectRecord,
-	date string,
-	note string,
-) (string, error) {
-	matchedProjectDir := filepath.Join(dataDir, "projects", selectedProject.Name)
-
-	matchedProjectInfo, matchedProjectInfoErr := os.Stat(matchedProjectDir)
-
-	if os.IsNotExist(matchedProjectInfoErr) {
-		return "", fmt.Errorf("project %q is registered but its folder is missing: %s", selectedProject.Name, matchedProjectDir)
-	}
-
-	if matchedProjectInfoErr != nil {
-		return "", fmt.Errorf("check project folder %s: %w", matchedProjectDir, matchedProjectInfoErr)
-	}
-
-	if !matchedProjectInfo.IsDir() {
-		return "", fmt.Errorf("project folder is not a directory: %s", matchedProjectDir)
-	}
-
-	logDir := filepath.Join(matchedProjectDir, "log")
-
-	logDirInfo, logDirInfoErr := os.Stat(logDir)
-
-	if logDirInfoErr != nil && !os.IsNotExist(logDirInfoErr) {
-		return "", fmt.Errorf("check log dir: %w", logDirInfoErr)
-	}
-
-	if os.IsNotExist(logDirInfoErr) {
-		createLogDirErr := os.MkdirAll(logDir, 0700)
-
-		if createLogDirErr != nil {
-			return "", fmt.Errorf("create log dir: %w", createLogDirErr)
-		}
-	}
-
-	if logDirInfoErr == nil && !logDirInfo.IsDir() {
-		return "", fmt.Errorf("project log folder is not a directory: %s", logDir)
-	}
-
-	logFilePath := filepath.Join(logDir, date+".md")
-
-	logFile, logFileErr := os.OpenFile(logFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-
-	if os.IsExist(logFileErr) {
-		// append the contents
-		existingLog, existingLogErr := os.ReadFile(logFilePath)
-
-		if existingLogErr != nil {
-			return "", fmt.Errorf("read daily log %s: %w", logFilePath, existingLogErr)
-		}
-
-		entry := fmt.Sprintf("- %s\n", note)
-
-		if len(existingLog) > 0 && existingLog[len(existingLog)-1] != '\n' {
-			entry = "\n" + entry
-		}
-
-		logFile, logFileErr := os.OpenFile(logFilePath, os.O_WRONLY|os.O_APPEND, 0)
-
-		if logFileErr != nil {
-			return "", fmt.Errorf("open daily log %s: %w", logFilePath, logFileErr)
-		}
-
-		_, writeErr := logFile.Write([]byte(entry))
-		closeErr := logFile.Close()
-
-		if writeErr != nil {
-			return "", fmt.Errorf("append daily log %s: %w", logFilePath, writeErr)
-		}
-
-		if closeErr != nil {
-			return "", fmt.Errorf("close daily log %s: %w", logFilePath, closeErr)
-		}
-
-	} else if logFileErr != nil {
-		return "", fmt.Errorf("create daily log %s: %w", logFilePath, logFileErr)
-	} else {
-		// write to the new file
-		logContent := fmt.Sprintf("# %s\n\n- %s\n", date, note)
-
-		_, writeLogErr := logFile.Write([]byte(logContent))
-		closeLogErr := logFile.Close()
-
-		if writeLogErr != nil {
-			return "", fmt.Errorf("write daily log %s: %w", logFilePath, writeLogErr)
-		}
-
-		if closeLogErr != nil {
-			return "", fmt.Errorf("close daily log %s: %w", logFilePath, closeLogErr)
-		}
-	}
-
-	return logFilePath, nil
-}
-
-func ChooseActiveProject(activeProjects []project.ProjectRecord) (project.ProjectRecord, error) {
-	var chosenProjectName string
-	var options []huh.Option[string]
-
-	for _, p := range activeProjects {
-		options = append(options, huh.NewOption(p.Name, p.Name))
-	}
-
-	selectProjectErr := prompt.Run(huh.NewSelect[string]().
-		Title("Select a project").
-		Options(options...).
-		Value(&chosenProjectName))
-
-	if selectProjectErr != nil {
-		return project.ProjectRecord{}, fmt.Errorf("choose project: %w", selectProjectErr)
-	}
-
-	for _, p := range activeProjects {
-		if p.Name == chosenProjectName {
-			return p, nil
-		}
-	}
-
-	return project.ProjectRecord{}, fmt.Errorf("selected project %q was not found", chosenProjectName)
-}
-
-func ResolveProject(registry project.ProjectsRegistry, interactive bool) (project.ProjectRecord, error) {
-	matchedProjects, matchErr := FindProjectsLinkedToCurrentDirectory(registry)
-
-	if matchErr != nil {
-		return project.ProjectRecord{}, matchErr
-	}
-
-	if len(matchedProjects) == 1 && !matchedProjects[0].Archived {
-		return matchedProjects[0], nil
-	}
-
-	if !interactive {
-		switch len(matchedProjects) {
-		case 0:
-			return project.ProjectRecord{}, fmt.Errorf("no project is linked to the current directory; pass --project <name>")
-		case 1:
-			return project.ProjectRecord{}, fmt.Errorf("project %q is archived; restore it or pass --project <name>", matchedProjects[0].Name)
-		default:
-			names := make([]string, 0, len(matchedProjects))
-
-			for _, matched := range matchedProjects {
-				names = append(names, matched.Name)
-			}
-
-			return project.ProjectRecord{}, fmt.Errorf(
-				"multiple projects are linked to the current directory: %s; pass --project <name>",
-				strings.Join(names, ", "),
-			)
-		}
-	}
-
-	var activeProjects []project.ProjectRecord
-
-	for _, registeredProject := range registry.Projects {
-		if !registeredProject.Archived {
-			activeProjects = append(activeProjects, registeredProject)
-		}
-	}
-
-	if len(activeProjects) == 0 {
-		return project.ProjectRecord{}, fmt.Errorf("no active projects available; add one with trail project add")
-	}
-
-	return ChooseActiveProject(activeProjects)
 }

@@ -2,15 +2,9 @@ package issue
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/config"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -42,55 +36,32 @@ func init() {
 }
 
 func runIssueListCommand(cmd *cobra.Command, args []string) error {
-	cfg, _, configLoadErr := config.Load()
+	cfg, _, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	if dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory); dataDirErr != nil {
-		return dataDirErr
+	c, openErr := core.Open(cfg.DataDirectory)
+
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "listing its issues")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
+	if projectErr != nil {
+		return projectErr
 	}
 
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
-	}
-
-	var matchedProject project.ProjectRecord
-
-	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
-
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before listing its issues", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
-		}
-
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
-		}
-	} else {
-		resolvedProject, resolveErr := log.ResolveProject(projectRegistry, true)
+	if !projectGiven {
+		resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
 		if resolveErr != nil {
 			return resolveErr
@@ -99,20 +70,8 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 		matchedProject = resolvedProject
 	}
 
-	projectDir, projectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
-
-	if projectDirErr != nil {
-		return projectDirErr
-	}
-
-	issueDir, issueDirErr := checklist.ResolveDir(projectDir, checklist.Issues)
-
-	if issueDirErr != nil {
-		return issueDirErr
-	}
-
 	for {
-		summaries, listErr := checklist.ListFiles(issueDir)
+		summaries, listErr := c.Files(matchedProject, core.Issues)
 
 		if listErr != nil {
 			return listErr
@@ -153,15 +112,19 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		chosenFilePath := filepath.Join(issueDir, chosenFile)
+		chosenFilePath, chosenFilePathErr := c.FilePath(matchedProject, core.Issues, chosenFile)
 
-		content, readErr := os.ReadFile(chosenFilePath)
-
-		if readErr != nil {
-			return fmt.Errorf("read issue file %s: %w", chosenFilePath, readErr)
+		if chosenFilePathErr != nil {
+			return chosenFilePathErr
 		}
 
-		items := checklist.ParseItems(content)
+		content, readErr := c.ReadFile(matchedProject, core.Issues, chosenFile)
+
+		if readErr != nil {
+			return readErr
+		}
+
+		items := core.ParseItems(content)
 
 		cmd.Printf("%s / %s\n\n", matchedProject.Name, chosenFile)
 
@@ -208,7 +171,7 @@ func runIssueListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("select issues: %w", toggleErr)
 		}
 
-		changed, saveErr := checklist.SetDone(chosenFilePath, content, items, closedIndexes)
+		changed, saveErr := core.SetDone(chosenFilePath, content, items, closedIndexes)
 
 		if saveErr != nil {
 			return saveErr

@@ -2,15 +2,12 @@ package project
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/config"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/spf13/cobra"
 )
 
-// listCmd represents the list command
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List projects tracked by Trail",
@@ -29,22 +26,22 @@ func init() {
 
 func runProjectListCommand(cmd *cobra.Command, args []string) error {
 
-	cfg, _, configLoadErr := config.Load()
+	cfg, _, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
+	c, openErr := core.Open(cfg.DataDirectory)
 
-	if dataDirErr != nil {
-		return dataDirErr
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
 	all, allErr := cmd.Flags().GetBool("all")
@@ -67,50 +64,17 @@ func runProjectListCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("tag cannot be omitted if the flag is passed")
 	}
 
-	var selectedProjects []ProjectRecord
-
-	for _, registeredProject := range projectRegistry.Projects {
-		if registeredProject.Archived && !all {
-			continue
-		}
-
-		if hasTagFilter {
-			matchesTag := false
-
-			for _, projectTag := range registeredProject.Tags {
-				if strings.EqualFold(projectTag, tag) {
-					matchesTag = true
-					break
-				}
-			}
-
-			if !matchesTag {
-				continue
-			}
-		}
-
-		selectedProjects = append(selectedProjects, registeredProject)
-	}
+	selectedProjects := core.FilterProjects(projects, all, tag)
 
 	for _, selectedProject := range selectedProjects {
-		projectDir := filepath.Join(cfg.DataDirectory, "projects", selectedProject.Name)
+		_, projectDirErr := c.ProjectDir(selectedProject)
 
-		projectDirInfo, projectDirInfoErr := os.Stat(projectDir)
-
-		if os.IsNotExist(projectDirInfoErr) {
-			return fmt.Errorf("project %q is registered but its folder is missing: %s", selectedProject.Name, projectDir)
-		}
-
-		if projectDirInfoErr != nil {
-			return fmt.Errorf("check folder for project %q: %w", selectedProject.Name, projectDirInfoErr)
-		}
-
-		if !projectDirInfo.IsDir() {
-			return fmt.Errorf("project %q has a path that is not a directory: %s", selectedProject.Name, projectDir)
+		if projectDirErr != nil {
+			return projectDirErr
 		}
 	}
 
-	if len(projectRegistry.Projects) == 0 {
+	if len(projects) == 0 {
 		cmd.Println("No projects yet. Add one with trail project add.")
 		return nil
 	}

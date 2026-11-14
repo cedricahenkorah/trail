@@ -1,24 +1,14 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-*/
 package task
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/config"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
-// listCmd represents the list command
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Browse project tasks and mark them done or open",
@@ -46,117 +36,42 @@ func init() {
 }
 
 func runTaskListCommand(cmd *cobra.Command, args []string) error {
-	cfg, _, configLoadErr := config.Load()
+	cfg, _, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory)
+	c, openErr := core.Open(cfg.DataDirectory)
 
-	if dataDirErr != nil {
-		return dataDirErr
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "filtering by this project")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
+	if projectErr != nil {
+		return projectErr
 	}
 
-	projectFilter = strings.TrimSpace(projectFilter)
+	if !projectGiven {
+		resolvedProject, resolveErr := prompt.ResolveProject(projects, true)
 
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
-	}
-
-	var matchedProject project.ProjectRecord
-
-	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
-
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before filtering by this project", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
+		if resolveErr != nil {
+			return resolveErr
 		}
 
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
-		}
-	}
-
-	if !cmd.Flags().Changed("project") {
-		matchedProjects, matchedProjectsErr := log.FindProjectsLinkedToCurrentDirectory(projectRegistry)
-
-		if matchedProjectsErr != nil {
-			return matchedProjectsErr
-		}
-
-		var activeProjects []project.ProjectRecord
-
-		for _, registeredProject := range projectRegistry.Projects {
-			if registeredProject.Archived {
-				continue
-			}
-
-			activeProjects = append(activeProjects, registeredProject)
-		}
-
-		if len(activeProjects) == 0 {
-			return fmt.Errorf("no active projects available; add one with trail project add")
-		}
-
-		var activeMatches []project.ProjectRecord
-
-		for _, matched := range matchedProjects {
-			if matched.Archived {
-				continue
-			}
-
-			activeMatches = append(activeMatches, matched)
-		}
-
-		switch len(activeMatches) {
-		case 1:
-			matchedProject = activeMatches[0]
-
-		default:
-			activeProject, activeProjectErr := log.ChooseActiveProject(activeProjects)
-
-			if activeProjectErr != nil {
-				return activeProjectErr
-			}
-
-			matchedProject = activeProject
-		}
-	}
-
-	matchedProjectDir, matchedProjectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
-
-	if matchedProjectDirErr != nil {
-		return matchedProjectDirErr
-	}
-
-	taskDir, taskDirErr := checklist.ResolveDir(matchedProjectDir, checklist.Tasks)
-
-	if taskDirErr != nil {
-		return taskDirErr
+		matchedProject = resolvedProject
 	}
 
 	for {
-		summaries, listErr := checklist.ListFiles(taskDir)
+		summaries, listErr := c.Files(matchedProject, core.Tasks)
 
 		if listErr != nil {
 			return listErr
@@ -203,15 +118,19 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		chosenFilePath := filepath.Join(taskDir, chosenFile)
+		chosenFilePath, chosenFilePathErr := c.FilePath(matchedProject, core.Tasks, chosenFile)
 
-		chosenFileContent, chosenFileContentErr := os.ReadFile(chosenFilePath)
-
-		if chosenFileContentErr != nil {
-			return fmt.Errorf("read task file: %w", chosenFileContentErr)
+		if chosenFilePathErr != nil {
+			return chosenFilePathErr
 		}
 
-		parsedChosenFileTaskItems := checklist.ParseItems(chosenFileContent)
+		chosenFileContent, chosenFileContentErr := c.ReadFile(matchedProject, core.Tasks, chosenFile)
+
+		if chosenFileContentErr != nil {
+			return chosenFileContentErr
+		}
+
+		parsedChosenFileTaskItems := core.ParseItems(chosenFileContent)
 
 		cmd.Printf("%s / %s\n\n", matchedProject.Name, chosenFile)
 
@@ -258,7 +177,7 @@ func runTaskListCommand(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("select tasks: %w", toggleTasksErr)
 		}
 
-		changed, saveErr := checklist.SetDone(chosenFilePath, chosenFileContent, parsedChosenFileTaskItems, completedIndexes)
+		changed, saveErr := core.SetDone(chosenFilePath, chosenFileContent, parsedChosenFileTaskItems, completedIndexes)
 
 		if saveErr != nil {
 			return saveErr

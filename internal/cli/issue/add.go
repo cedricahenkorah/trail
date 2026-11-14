@@ -5,11 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cedricahenkorah/trail/internal/cli/checklist"
-	"github.com/cedricahenkorah/trail/internal/cli/config"
-	"github.com/cedricahenkorah/trail/internal/cli/log"
-	"github.com/cedricahenkorah/trail/internal/cli/project"
 	"github.com/cedricahenkorah/trail/internal/cli/prompt"
+	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -38,32 +35,28 @@ func init() {
 }
 
 func runIssueAddCommand(cmd *cobra.Command, args []string) error {
-	cfg, _, configLoadErr := config.Load()
+	cfg, _, configLoadErr := core.LoadConfig()
 
 	if configLoadErr != nil {
 		return configLoadErr
 	}
 
-	if dataDirErr := config.ValidateDataDirectory(cfg.DataDirectory); dataDirErr != nil {
-		return dataDirErr
+	c, openErr := core.Open(cfg.DataDirectory)
+
+	if openErr != nil {
+		return openErr
 	}
 
-	projectRegistry, projectRegistryErr := project.LoadProjectRegistry(cfg.DataDirectory)
+	projects, projectsErr := c.Projects()
 
-	if projectRegistryErr != nil {
-		return projectRegistryErr
+	if projectsErr != nil {
+		return projectsErr
 	}
 
-	projectFilter, projectFilterErr := cmd.Flags().GetString("project")
+	matchedProject, projectGiven, projectErr := prompt.ProjectFlag(cmd, c, "adding an issue")
 
-	if projectFilterErr != nil {
-		return fmt.Errorf("error reading the project filter: %w", projectFilterErr)
-	}
-
-	projectFilter = strings.TrimSpace(projectFilter)
-
-	if cmd.Flags().Changed("project") && projectFilter == "" {
-		return fmt.Errorf("--project requires a project name")
+	if projectErr != nil {
+		return projectErr
 	}
 
 	fileName, fileNameErr := cmd.Flags().GetString("file")
@@ -75,7 +68,7 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 	fileName = strings.TrimSpace(fileName)
 
 	if cmd.Flags().Changed("file") {
-		normalizedFileName, normalizeErr := checklist.NormalizeFilename(fileName)
+		normalizedFileName, normalizeErr := core.NormalizeFilename(fileName)
 
 		if normalizeErr != nil {
 			if fileName == "" {
@@ -103,29 +96,8 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var matchedProject project.ProjectRecord
-
-	if projectFilter != "" {
-		for _, registeredProject := range projectRegistry.Projects {
-			if !strings.EqualFold(registeredProject.Name, projectFilter) {
-				continue
-			}
-
-			if registeredProject.Archived {
-				return fmt.Errorf("project %q is archived; restore it before adding an issue", registeredProject.Name)
-			}
-
-			matchedProject = registeredProject
-			break
-		}
-
-		if matchedProject.Name == "" {
-			return fmt.Errorf("project %q is not registered; run trail project list to see available projects", projectFilter)
-		}
-	}
-
-	if matchedProject.Name == "" {
-		resolvedProject, resolveErr := log.ResolveProject(projectRegistry, interactive)
+	if !projectGiven {
+		resolvedProject, resolveErr := prompt.ResolveProject(projects, interactive)
 
 		if resolveErr != nil {
 			return resolveErr
@@ -136,21 +108,15 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 
 	today := time.Now().Format("2006-01-02")
 
-	projectDir, projectDirErr := project.ResolveFolder(cfg.DataDirectory, matchedProject)
-
-	if projectDirErr != nil {
-		return projectDirErr
-	}
-
-	issueDir, issueDirErr := checklist.ResolveDir(projectDir, checklist.Issues)
-
-	if issueDirErr != nil {
-		return issueDirErr
-	}
-
 	if fileName == "" {
 		if interactive {
-			chosenFile, chooseFileErr := checklist.ChooseFile(issueDir, checklist.Issues, today)
+			issueFiles, issueFilesErr := c.Files(matchedProject, core.Issues)
+
+			if issueFilesErr != nil {
+				return issueFilesErr
+			}
+
+			chosenFile, chooseFileErr := prompt.ChooseFile(issueFiles, today)
 
 			if chooseFileErr != nil {
 				return chooseFileErr
@@ -181,7 +147,7 @@ func runIssueAddCommand(cmd *cobra.Command, args []string) error {
 		issueText = strings.TrimSpace(issueText)
 	}
 
-	issueFilePath, saveErr := checklist.AddItem(projectDir, checklist.Issues, fileName, today, issueText)
+	issueFilePath, saveErr := c.AddItem(matchedProject, core.Issues, fileName, today, issueText)
 
 	if saveErr != nil {
 		return saveErr
