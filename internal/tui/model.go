@@ -82,7 +82,6 @@ type model struct {
 	fileList list.Model
 	fileName string
 	content  contentView
-	today    core.TodaySummary
 
 	// err is the last load error, shown above the help bar until a reload.
 	err error
@@ -292,7 +291,6 @@ func (m *model) clearTab() {
 	m.fileList.SetItems(nil)
 	m.fileName = ""
 	m.content.clear()
-	m.today = core.TodaySummary{}
 }
 
 // setFocus focuses p and highlights the selected row only in its list.
@@ -420,7 +418,7 @@ func (m model) handleToday(msg todayLoadedMsg) (model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.today = msg.summary
+	m.content.setMarkdown(msg.project+"/today", todayMarkdown(msg.project, msg.summary))
 
 	return m, nil
 }
@@ -549,19 +547,14 @@ func (m model) contentTitle() string {
 	return m.fileName
 }
 
-// contentBody is the rendered file. The Today tab is a placeholder until step 8.
+// contentBody is the rendered file or today summary.
 func (m model) contentBody() string {
 	if m.project.Name == "" {
 		return ""
 	}
 
-	if m.activeTab == todayTab {
-		return fmt.Sprintf(
-			"Devlog: %d entries\nOpen tasks: %d\nUnresolved issues: %d",
-			len(m.today.Devlog),
-			countItems(m.today.Tasks),
-			countItems(m.today.Issues),
-		)
+	if m.content.empty() && m.activeTab == todayTab {
+		return mutedStyle.Render("Loading…")
 	}
 
 	if m.content.empty() {
@@ -569,15 +562,4 @@ func (m model) contentBody() string {
 	}
 
 	return m.content.view()
-}
-
-// countItems returns the number of items across files.
-func countItems(files []core.ChecklistFile) int {
-	count := 0
-
-	for _, file := range files {
-		count += len(file.Items)
-	}
-
-	return count
 }
