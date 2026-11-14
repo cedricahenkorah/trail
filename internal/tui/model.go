@@ -250,6 +250,7 @@ func (m model) projectCursorMoved() (model, tea.Cmd) {
 	}
 
 	m.project = p
+	m.err = nil
 	m.clearTab()
 
 	return m, m.loadTab()
@@ -264,6 +265,7 @@ func (m model) fileCursorMoved() (model, tea.Cmd) {
 	}
 
 	m.fileName = name
+	m.err = nil
 	m.content.clear()
 
 	section, _ := m.activeTab.section()
@@ -278,6 +280,7 @@ func (m model) switchTab(t tab) (model, tea.Cmd) {
 	}
 
 	m.activeTab = t
+	m.err = nil
 	m.clearTab()
 
 	if m.focus == filesPane && !m.showFiles() {
@@ -559,6 +562,10 @@ func (m model) contentTitle() string {
 func (m model) contentBody() string {
 	if m.project.Name == "" {
 		return ""
+	}
+
+	if m.content.empty() && m.activeTab == todayTab && m.err != nil {
+		return mutedStyle.Render("Couldn't load today's summary")
 	}
 
 	if m.content.empty() && m.activeTab == todayTab {
