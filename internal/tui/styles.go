@@ -15,6 +15,8 @@ var (
 
 	titleStyle = lipgloss.NewStyle().Bold(true)
 
+	selectedStyle = titleStyle.Foreground(focusedBorderColor)
+
 	mutedStyle = lipgloss.NewStyle().Faint(true)
 
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
@@ -35,9 +37,11 @@ func renderPane(title, body string, width, height int, focused bool) string {
 	content := lipgloss.JoinVertical(lipgloss.Left, titleStyle.Render(title), "", body)
 	content = lipgloss.NewStyle().MaxWidth(innerWidth).MaxHeight(innerHeight).Render(content)
 
-	// Width and Height include padding but not the border.
 	return style.
 		Width(width - style.GetHorizontalBorderSize()).
 		Height(innerHeight).
 		Render(content)
 }
+
+// paneHeaderHeight is the title line and the blank line under it.
+const paneHeaderHeight = 2

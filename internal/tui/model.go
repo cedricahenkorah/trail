@@ -2,12 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/cedricahenkorah/trail/internal/core"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -75,24 +75,32 @@ type model struct {
 	height int
 
 	projectsLoaded bool
-	projects       []core.Project
+	projectList    list.Model
 	// project is the selected project, or the zero Project if there are none.
-	project  core.Project
-	files    []core.FileSummary
+	project core.Project
+
+	fileList list.Model
 	fileName string
 	content  []byte
 	today    core.TodaySummary
+
 	// err is the last load error, shown above the help bar until a reload.
 	err error
 }
 
 func newModel(c *core.Core, opts Options) model {
-	return model{
-		core: c,
-		opts: opts,
-		keys: defaultKeyMap(),
-		help: help.New(),
+	m := model{
+		core:        c,
+		opts:        opts,
+		keys:        defaultKeyMap(),
+		help:        help.New(),
+		projectList: newProjectList(),
+		fileList:    newFileList(),
 	}
+
+	m.setFocus(projectsPane)
+
+	return m
 }
 
 func (m model) Init() tea.Cmd {
@@ -100,6 +108,14 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := m.update(msg)
+
+	m.resize()
+
+	return m, cmd
+}
+
+func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -118,21 +134,144 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case todayLoadedMsg:
 		return m.handleToday(msg)
 
+	case list.FilterMatchesMsg:
+		return m.updateFocusedList(msg)
+
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
-		case key.Matches(msg, m.keys.NextPane):
-			m.focus = m.nextPane(1)
-		case key.Matches(msg, m.keys.PrevPane):
-			m.focus = m.nextPane(-1)
-		case key.Matches(msg, m.keys.Reload):
-			m.err = nil
-			return m, loadProjects(m.core)
-		}
+		return m.handleKey(msg)
 	}
 
 	return m, nil
+}
+
+func (m model) handleKey(msg tea.KeyMsg) (model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	if l := m.focusedList(); l != nil && l.FilterState() == list.Filtering {
+		return m.updateFocusedList(msg)
+	}
+
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+	case key.Matches(msg, m.keys.NextPane):
+		m.setFocus(m.nextPane(1))
+	case key.Matches(msg, m.keys.PrevPane):
+		m.setFocus(m.nextPane(-1))
+	case key.Matches(msg, m.keys.GoToTab):
+		return m.switchTab(tab(msg.String()[0] - '1'))
+	case key.Matches(msg, m.keys.NextTab):
+		return m.switchTab((m.activeTab + 1) % tab(len(tabs)))
+	case key.Matches(msg, m.keys.PrevTab):
+		return m.switchTab((m.activeTab + tab(len(tabs)) - 1) % tab(len(tabs)))
+	case key.Matches(msg, m.keys.Reload):
+		m.err = nil
+		return m, loadProjects(m.core)
+	default:
+		return m.updateFocusedList(msg)
+	}
+
+	return m, nil
+}
+
+// focusedList returns the list in the focused pane, or nil if it has none.
+func (m *model) focusedList() *list.Model {
+	switch {
+	case m.focus == projectsPane:
+		return &m.projectList
+	case m.focus == filesPane && m.showFiles():
+		return &m.fileList
+	default:
+		return nil
+	}
+}
+
+// updateFocusedList passes msg to the focused list, then loads whatever
+// is under its cursor if that changed. While a filter is being typed the
+// cursor jumps around, so loading waits until the filter is accepted.
+func (m model) updateFocusedList(msg tea.Msg) (model, tea.Cmd) {
+	var listCmd, loadCmd tea.Cmd
+
+	switch m.focus {
+	case projectsPane:
+		m.projectList, listCmd = m.projectList.Update(msg)
+
+		if m.projectList.FilterState() != list.Filtering {
+			m, loadCmd = m.projectCursorMoved()
+		}
+	case filesPane:
+		m.fileList, listCmd = m.fileList.Update(msg)
+
+		if m.fileList.FilterState() != list.Filtering {
+			m, loadCmd = m.fileCursorMoved()
+		}
+	}
+
+	return m, tea.Batch(listCmd, loadCmd)
+}
+
+// projectCursorMoved selects the project under the cursor and loads the active tab.
+func (m model) projectCursorMoved() (model, tea.Cmd) {
+	p, ok := selectedProject(m.projectList)
+
+	if !ok || p.Name == m.project.Name {
+		return m, nil
+	}
+
+	m.project = p
+	m.clearTab()
+
+	return m, m.loadTab()
+}
+
+// fileCursorMoved selects the file under the cursor and loads it.
+func (m model) fileCursorMoved() (model, tea.Cmd) {
+	name, ok := selectedFileName(m.fileList)
+
+	if !ok || name == m.fileName {
+		return m, nil
+	}
+
+	m.fileName = name
+	m.content = nil
+
+	section, _ := m.activeTab.section()
+
+	return m, loadFile(m.core, m.project, section, name)
+}
+
+// switchTab shows t and loads it, moving focus off the file list if t hides it.
+func (m model) switchTab(t tab) (model, tea.Cmd) {
+	if t == m.activeTab {
+		return m, nil
+	}
+
+	m.activeTab = t
+	m.clearTab()
+
+	if m.focus == filesPane && !m.showFiles() {
+		m.setFocus(contentPane)
+	}
+
+	return m, m.loadTab()
+}
+
+// clearTab drops everything loaded for the active tab.
+func (m *model) clearTab() {
+	m.fileList.ResetFilter()
+	m.fileList.SetItems(nil)
+	m.fileName = ""
+	m.content = nil
+	m.today = core.TodaySummary{}
+}
+
+// setFocus focuses p and highlights the selected row only in its list.
+func (m *model) setFocus(p pane) {
+	m.focus = p
+	setListFocus(&m.projectList, p == projectsPane)
+	setListFocus(&m.fileList, p == filesPane)
 }
 
 // handleProjects keeps the selected project if it still exists, else
@@ -145,36 +284,29 @@ func (m model) handleProjects(msg projectsLoadedMsg) (model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.projects = msg.projects
-
 	preferredName := m.project.Name
 
 	if preferredName == "" {
 		preferredName = m.opts.Project
 	}
 
-	selected := core.Project{}
+	m.projectList.ResetFilter()
+	listCmd := m.projectList.SetItems(projectItems(msg.projects))
+	m.projectList.Select(max(projectIndex(m.projectList, preferredName), 0))
 
-	for _, p := range m.projects {
-		if p.Name == preferredName {
-			selected = p
-		}
-	}
+	selected, ok := selectedProject(m.projectList)
 
-	if selected.Name == "" && len(m.projects) > 0 {
-		selected = m.projects[0]
+	if !ok {
+		selected = core.Project{}
 	}
 
 	if selected.Name != m.project.Name {
-		m.files = nil
-		m.fileName = ""
-		m.content = nil
-		m.today = core.TodaySummary{}
+		m.clearTab()
 	}
 
 	m.project = selected
 
-	return m, m.loadTab()
+	return m, tea.Batch(listCmd, m.loadTab())
 }
 
 // loadTab loads the active tab for the selected project.
@@ -203,36 +335,31 @@ func (m model) handleFiles(msg filesLoadedMsg) (model, tea.Cmd) {
 
 	if msg.err != nil {
 		m.err = msg.err
-		m.files = nil
-		m.fileName = ""
-		m.content = nil
+		m.clearTab()
 		return m, nil
 	}
 
-	m.files = msg.files
+	m.fileList.ResetFilter()
+	listCmd := m.fileList.SetItems(fileItems(msg.files, section))
+	m.fileList.Select(max(fileIndex(m.fileList, m.fileName), 0))
 
-	previous := m.fileName
-	m.fileName = ""
+	name, ok := selectedFileName(m.fileList)
 
-	for _, file := range m.files {
-		if file.Name == previous {
-			m.fileName = previous
-		}
+	if !ok {
+		name = ""
 	}
 
-	if m.fileName == "" && len(m.files) > 0 {
-		m.fileName = m.files[0].Name
-	}
-
-	if m.fileName != previous {
+	if name != m.fileName {
 		m.content = nil
 	}
 
-	if m.fileName == "" {
-		return m, nil
+	m.fileName = name
+
+	if name == "" {
+		return m, listCmd
 	}
 
-	return m, loadFile(m.core, m.project, section, m.fileName)
+	return m, tea.Batch(listCmd, loadFile(m.core, m.project, section, name))
 }
 
 func (m model) handleFile(msg fileLoadedMsg) (model, tea.Cmd) {
@@ -287,12 +414,8 @@ func (m model) nextPane(step int) pane {
 	}
 }
 
-func (m model) View() string {
-	// Bubble Tea sends the window size right after start; draw nothing until then.
-	if m.width == 0 {
-		return ""
-	}
-
+// footer is the error line, if any, above the help bar.
+func (m model) footer() string {
 	footer := m.help.View(m.keys)
 
 	if m.err != nil {
@@ -300,7 +423,37 @@ func (m model) View() string {
 		footer = lipgloss.JoinVertical(lipgloss.Left, status, footer)
 	}
 
-	l := newLayout(m.width, m.height, lipgloss.Height(footer), m.showFiles())
+	return footer
+}
+
+func (m model) layout() layout {
+	return newLayout(m.width, m.height, lipgloss.Height(m.footer()), m.showFiles())
+}
+
+// resize fits the lists inside their panes.
+func (m *model) resize() {
+	l := m.layout()
+
+	if l.tooSmall {
+		return
+	}
+
+	showFilterWhenUsed(&m.projectList)
+	showFilterWhenUsed(&m.fileList)
+
+	frameWidth, frameHeight := paneStyle.GetFrameSize()
+	bodyHeight := l.paneHeight - frameHeight - paneHeaderHeight
+
+	m.projectList.SetSize(l.sidebarWidth-frameWidth, bodyHeight)
+	m.fileList.SetSize(filesWidth-frameWidth, bodyHeight)
+}
+
+func (m model) View() string {
+	if m.width == 0 {
+		return ""
+	}
+
+	l := m.layout()
 
 	if l.tooSmall {
 		return tooSmallView(m.width, m.height)
@@ -311,7 +464,7 @@ func (m model) View() string {
 	}
 
 	if m.showFiles() {
-		panes = append(panes, renderPane(m.activeTab.String(), m.filesBody(), l.filesWidth, l.paneHeight, m.focus == filesPane))
+		panes = append(panes, renderPane(tabBar(m.activeTab, m.focus == filesPane), m.filesBody(), l.filesWidth, l.paneHeight, m.focus == filesPane))
 	}
 
 	panes = append(panes, renderPane(m.contentTitle(), m.contentBody(), l.contentWidth, l.paneHeight, m.focus == contentPane))
@@ -319,28 +472,20 @@ func (m model) View() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		lipgloss.JoinHorizontal(lipgloss.Top, panes...),
-		footer,
+		m.footer(),
 	)
 }
-
-// The pane bodies below are plain placeholders; steps 5 to 8 replace them.
 
 func (m model) projectsBody() string {
 	if !m.projectsLoaded {
 		return mutedStyle.Render("Loading…")
 	}
 
-	if len(m.projects) == 0 {
+	if len(m.projectList.Items()) == 0 {
 		return mutedStyle.Render("No projects yet.\nAdd one with\ntrail project add")
 	}
 
-	var lines []string
-
-	for _, p := range m.projects {
-		lines = append(lines, marker(p.Name == m.project.Name)+p.Name)
-	}
-
-	return strings.Join(lines, "\n")
+	return m.projectList.View()
 }
 
 func (m model) filesBody() string {
@@ -348,28 +493,18 @@ func (m model) filesBody() string {
 		return ""
 	}
 
-	if len(m.files) == 0 {
+	if len(m.fileList.Items()) == 0 {
 		return mutedStyle.Render("No files")
 	}
 
-	var lines []string
-
-	for _, file := range m.files {
-		count := fmt.Sprint(file.Total)
-
-		if m.activeTab != logTab {
-			count = fmt.Sprintf("%d/%d", file.Open, file.Total)
-		}
-
-		lines = append(lines, marker(file.Name == m.fileName)+file.Name+"  "+mutedStyle.Render(count))
-	}
-
-	return strings.Join(lines, "\n")
+	return m.fileList.View()
 }
 
+// contentTitle is the file name, or the tab bar on the Today tab, where
+// the file list and its tab bar are hidden.
 func (m model) contentTitle() string {
 	if m.activeTab == todayTab {
-		return "Today"
+		return tabBar(m.activeTab, m.focus == contentPane)
 	}
 
 	if m.fileName != "" {
@@ -379,6 +514,7 @@ func (m model) contentTitle() string {
 	return "Content"
 }
 
+// contentBody is a plain placeholder; steps 7 and 8 replace it.
 func (m model) contentBody() string {
 	if m.project.Name == "" {
 		return ""
@@ -400,15 +536,6 @@ func (m model) contentBody() string {
 	_, body := core.SplitFrontMatter(m.content)
 
 	return string(body)
-}
-
-// marker returns the prefix for a list row, "> " if it is selected.
-func marker(selected bool) string {
-	if selected {
-		return "> "
-	}
-
-	return "  "
 }
 
 // countItems returns the number of items across files.
