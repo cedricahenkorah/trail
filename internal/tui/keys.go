@@ -6,6 +6,7 @@ import "github.com/charmbracelet/bubbles/key"
 type keyMap struct {
 	NextPane key.Binding
 	PrevPane key.Binding
+	Reload   key.Binding
 	Quit     key.Binding
 }
 
@@ -19,6 +20,10 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("shift+tab"),
 			key.WithHelp("shift+tab", "previous pane"),
 		),
+		Reload: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "reload"),
+		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
@@ -27,9 +32,9 @@ func defaultKeyMap() keyMap {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.NextPane, k.Quit}
+	return []key.Binding{k.NextPane, k.Reload, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.NextPane, k.PrevPane}, {k.Quit}}
+	return [][]key.Binding{{k.NextPane, k.PrevPane}, {k.Reload, k.Quit}}
 }

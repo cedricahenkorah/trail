@@ -16,6 +16,8 @@ var (
 	titleStyle = lipgloss.NewStyle().Bold(true)
 
 	mutedStyle = lipgloss.NewStyle().Faint(true)
+
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
 )
 
 // renderPane draws title and body in a bordered box of outer size width × height.

@@ -5,7 +5,6 @@ import "github.com/charmbracelet/lipgloss"
 const (
 	sidebarWidth = 22
 	filesWidth   = 32
-	helpHeight   = 1
 	minWidth     = 70
 	minHeight    = 12
 )
@@ -19,16 +18,16 @@ type layout struct {
 	tooSmall     bool
 }
 
-// newLayout splits a width × height window into panes. filesWidth is 0
-// when showFiles is false, and content takes its space.
-func newLayout(width, height int, showFiles bool) layout {
+// newLayout splits a width × height window into panes above footerHeight
+// lines. filesWidth is 0 when showFiles is false, and content takes its space.
+func newLayout(width, height, footerHeight int, showFiles bool) layout {
 	if width < minWidth || height < minHeight {
 		return layout{tooSmall: true}
 	}
 
 	l := layout{
 		sidebarWidth: sidebarWidth,
-		paneHeight:   height - helpHeight,
+		paneHeight:   height - footerHeight,
 	}
 
 	if showFiles {
