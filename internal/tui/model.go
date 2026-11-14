@@ -81,7 +81,7 @@ type model struct {
 
 	fileList list.Model
 	fileName string
-	content  []byte
+	content  contentView
 	today    core.TodaySummary
 
 	// err is the last load error, shown above the help bar until a reload.
@@ -96,6 +96,7 @@ func newModel(c *core.Core, opts Options) model {
 		help:        help.New(),
 		projectList: newProjectList(),
 		fileList:    newFileList(),
+		content:     newContentView(opts.Style),
 	}
 
 	m.setFocus(projectsPane)
@@ -135,7 +136,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 		return m.handleToday(msg)
 
 	case list.FilterMatchesMsg:
-		return m.updateFocusedList(msg)
+		return m.updateFocused(msg)
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -150,7 +151,7 @@ func (m model) handleKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	}
 
 	if l := m.focusedList(); l != nil && l.FilterState() == list.Filtering {
-		return m.updateFocusedList(msg)
+		return m.updateFocused(msg)
 	}
 
 	switch {
@@ -166,11 +167,15 @@ func (m model) handleKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m.switchTab((m.activeTab + 1) % tab(len(tabs)))
 	case key.Matches(msg, m.keys.PrevTab):
 		return m.switchTab((m.activeTab + tab(len(tabs)) - 1) % tab(len(tabs)))
+	case key.Matches(msg, m.keys.Open):
+		m.open()
+	case key.Matches(msg, m.keys.Back) && m.focus == contentPane:
+		m.back()
 	case key.Matches(msg, m.keys.Reload):
 		m.err = nil
 		return m, loadProjects(m.core)
 	default:
-		return m.updateFocusedList(msg)
+		return m.updateFocused(msg)
 	}
 
 	return m, nil
@@ -188,10 +193,31 @@ func (m *model) focusedList() *list.Model {
 	}
 }
 
-// updateFocusedList passes msg to the focused list, then loads whatever
-// is under its cursor if that changed. While a filter is being typed the
-// cursor jumps around, so loading waits until the filter is accepted.
-func (m model) updateFocusedList(msg tea.Msg) (model, tea.Cmd) {
+// open moves focus one pane right: from a project to its files, and from
+// a file to its content.
+func (m *model) open() {
+	switch {
+	case m.focus == projectsPane && m.showFiles():
+		m.setFocus(filesPane)
+	case m.focus == projectsPane, m.focus == filesPane && m.fileName != "":
+		m.setFocus(contentPane)
+	}
+}
+
+// back moves focus from the content to the pane it was opened from.
+func (m *model) back() {
+	if m.showFiles() {
+		m.setFocus(filesPane)
+		return
+	}
+
+	m.setFocus(projectsPane)
+}
+
+// updateFocused passes msg to the focused pane. For a list, it then loads
+// whatever is under its cursor if that changed. While a filter is being
+// typed the cursor jumps around, so loading waits until it is accepted.
+func (m model) updateFocused(msg tea.Msg) (model, tea.Cmd) {
 	var listCmd, loadCmd tea.Cmd
 
 	switch m.focus {
@@ -207,6 +233,8 @@ func (m model) updateFocusedList(msg tea.Msg) (model, tea.Cmd) {
 		if m.fileList.FilterState() != list.Filtering {
 			m, loadCmd = m.fileCursorMoved()
 		}
+	case contentPane:
+		m.content, listCmd = m.content.update(msg, m.keys)
 	}
 
 	return m, tea.Batch(listCmd, loadCmd)
@@ -235,7 +263,7 @@ func (m model) fileCursorMoved() (model, tea.Cmd) {
 	}
 
 	m.fileName = name
-	m.content = nil
+	m.content.clear()
 
 	section, _ := m.activeTab.section()
 
@@ -263,7 +291,7 @@ func (m *model) clearTab() {
 	m.fileList.ResetFilter()
 	m.fileList.SetItems(nil)
 	m.fileName = ""
-	m.content = nil
+	m.content.clear()
 	m.today = core.TodaySummary{}
 }
 
@@ -350,7 +378,7 @@ func (m model) handleFiles(msg filesLoadedMsg) (model, tea.Cmd) {
 	}
 
 	if name != m.fileName {
-		m.content = nil
+		m.content.clear()
 	}
 
 	m.fileName = name
@@ -371,11 +399,13 @@ func (m model) handleFile(msg fileLoadedMsg) (model, tea.Cmd) {
 
 	if msg.err != nil {
 		m.err = msg.err
-		m.content = nil
+		m.content.clear()
 		return m, nil
 	}
 
-	m.content = msg.content
+	_, body := core.SplitFrontMatter(msg.content)
+
+	m.content.setMarkdown(msg.project+"/"+string(msg.section)+"/"+msg.name, string(body))
 
 	return m, nil
 }
@@ -430,7 +460,7 @@ func (m model) layout() layout {
 	return newLayout(m.width, m.height, lipgloss.Height(m.footer()), m.showFiles())
 }
 
-// resize fits the lists inside their panes.
+// resize fits the lists and content inside their panes.
 func (m *model) resize() {
 	l := m.layout()
 
@@ -446,6 +476,7 @@ func (m *model) resize() {
 
 	m.projectList.SetSize(l.sidebarWidth-frameWidth, bodyHeight)
 	m.fileList.SetSize(filesWidth-frameWidth, bodyHeight)
+	m.content.setSize(l.contentWidth-frameWidth, bodyHeight)
 }
 
 func (m model) View() string {
@@ -507,14 +538,18 @@ func (m model) contentTitle() string {
 		return tabBar(m.activeTab, m.focus == contentPane)
 	}
 
-	if m.fileName != "" {
-		return m.fileName
+	if m.fileName == "" {
+		return "Content"
 	}
 
-	return "Content"
+	if percent := m.content.scrollPercent(); percent != "" {
+		return m.fileName + "  " + mutedStyle.Render(percent)
+	}
+
+	return m.fileName
 }
 
-// contentBody is a plain placeholder; steps 7 and 8 replace it.
+// contentBody is the rendered file. The Today tab is a placeholder until step 8.
 func (m model) contentBody() string {
 	if m.project.Name == "" {
 		return ""
@@ -529,13 +564,11 @@ func (m model) contentBody() string {
 		)
 	}
 
-	if m.content == nil {
+	if m.content.empty() {
 		return mutedStyle.Render("No file selected")
 	}
 
-	_, body := core.SplitFrontMatter(m.content)
-
-	return string(body)
+	return m.content.view()
 }
 
 // countItems returns the number of items across files.
