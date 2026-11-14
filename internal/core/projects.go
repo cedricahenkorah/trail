@@ -211,16 +211,16 @@ func (c *Core) checkNameAvailable(name string, projectsRegistry registry) error 
 	return nil
 }
 
-// validateNewProject checks in and returns it as a Project with a trimmed
+// validateNewProject checks newProject and returns it as a Project with a trimmed
 // name, an absolute linked path, and de-duplicated tags.
-func (c *Core) validateNewProject(in NewProject, projectsRegistry registry) (Project, error) {
-	nameValidationErr := ValidateProjectName(in.Name)
+func (c *Core) validateNewProject(newProject NewProject, projectsRegistry registry) (Project, error) {
+	nameValidationErr := ValidateProjectName(newProject.Name)
 
 	if nameValidationErr != nil {
 		return Project{}, nameValidationErr
 	}
 
-	name := strings.TrimSpace(in.Name)
+	name := strings.TrimSpace(newProject.Name)
 
 	nameAvailableErr := c.checkNameAvailable(name, projectsRegistry)
 
@@ -228,7 +228,7 @@ func (c *Core) validateNewProject(in NewProject, projectsRegistry registry) (Pro
 		return Project{}, nameAvailableErr
 	}
 
-	path := strings.TrimSpace(in.Path)
+	path := strings.TrimSpace(newProject.Path)
 
 	if path != "" {
 		absolutePath, expandErr := ExpandPath(path)
@@ -254,7 +254,7 @@ func (c *Core) validateNewProject(in NewProject, projectsRegistry registry) (Pro
 
 	seen := make(map[string]bool)
 
-	for _, tag := range in.Tags {
+	for _, tag := range newProject.Tags {
 		tag = strings.TrimSpace(tag)
 
 		if tag == "" {
@@ -275,16 +275,16 @@ func (c *Core) validateNewProject(in NewProject, projectsRegistry registry) (Pro
 	return Project{Name: name, Tags: tags, LinkedPath: path}, nil
 }
 
-// AddProject validates in, creates the project's folder and project.md,
+// AddProject validates newProject, creates the project's folder and project.md,
 // and adds it to the registry.
-func (c *Core) AddProject(in NewProject) (Project, error) {
+func (c *Core) AddProject(newProject NewProject) (Project, error) {
 	projectsRegistry, loadErr := c.loadRegistry()
 
 	if loadErr != nil {
 		return Project{}, loadErr
 	}
 
-	newProject, validateErr := c.validateNewProject(in, projectsRegistry)
+	project, validateErr := c.validateNewProject(newProject, projectsRegistry)
 
 	if validateErr != nil {
 		return Project{}, validateErr
@@ -296,7 +296,7 @@ func (c *Core) AddProject(in NewProject) (Project, error) {
 		return Project{}, fmt.Errorf("create project directory: %w", createProjectsDirErr)
 	}
 
-	newProjectDir := filepath.Join(c.projectsDir(), newProject.Name)
+	newProjectDir := filepath.Join(c.projectsDir(), project.Name)
 
 	newProjectDirErr := os.Mkdir(newProjectDir, 0700)
 
@@ -306,13 +306,13 @@ func (c *Core) AddProject(in NewProject) (Project, error) {
 
 	projectMdPath := filepath.Join(newProjectDir, "project.md")
 
-	writeProjectMdErr := os.WriteFile(projectMdPath, []byte("# "+newProject.Name+"\n"), 0600)
+	writeProjectMdErr := os.WriteFile(projectMdPath, []byte("# "+project.Name+"\n"), 0600)
 
 	if writeProjectMdErr != nil {
 		return Project{}, removeNewProject(newProjectDir, fmt.Errorf("write project md file: %w", writeProjectMdErr))
 	}
 
-	projectsRegistry.Projects = append(projectsRegistry.Projects, newProject)
+	projectsRegistry.Projects = append(projectsRegistry.Projects, project)
 
 	registryContents, encodeErr := json.MarshalIndent(projectsRegistry, "", "  ")
 
@@ -328,7 +328,7 @@ func (c *Core) AddProject(in NewProject) (Project, error) {
 		return Project{}, removeNewProject(newProjectDir, fmt.Errorf("write project registry: %w", writeRegistryErr))
 	}
 
-	return newProject, nil
+	return project, nil
 }
 
 // removeNewProject deletes a folder AddProject just created and returns cause.
